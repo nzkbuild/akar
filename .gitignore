@@ -1,18 +1,11 @@
 /target
 
-# AKAR runtime artifacts — local only, not project history
-.akar/EVENT_LOG.jsonl
-.akar/EVENT_LOG.jsonl.bak
-.akar/*.bak.*
-.akar/reports/
-.akar/cache/
-.akar/tmp/
-.akar/SKILL_INVENTORY.md
-.akar/NEXT_RUN.md
-.akar/LEARNING_PATCHES.md
+# AKAR project-local runtime state — bootstrap recreates these
+.akar/
 
 # Test output artifacts
 test_output*.txt
+test-output.txt
 reports/
 
 # Environment

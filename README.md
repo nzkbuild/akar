@@ -1,103 +1,146 @@
-# AKAR — Adaptive Knowledge & Action Runtime
+# AKAR
 
-AKAR is a local runtime governance layer for Claude Code. It classifies tasks, enforces diff budgets, runs verification, records telemetry, and summarizes outcomes.
+<p align="center">
+  <img src="assets/branding/akar.png" alt="AKAR" width="180" />
+</p>
 
-## Quickstart
+**A local CLI companion for AI-assisted software engineering.**
+
+AKAR sits alongside Claude Code and helps add structure to AI coding sessions — preflight checks, diff budgets, skill awareness, local telemetry, postmortems, and learning notes.
+
+It does not write your code. It helps slow the agent down before it does something weird.
+
+---
+
+## What it does
+
+- Classifies your task before the agent touches anything
+- Enforces a diff budget so a small fix stays small
+- Detects skill conflicts (e.g. two methodology controllers active at once)
+- Records local-only telemetry after each mission
+- Summarises what happened and whether it went well
+- Proposes a learning note if something degraded or failed
+
+## What it does not do
+
+- It is not an AI model
+- It does not replace Claude Code
+- It does not write or execute code changes (v0.2.x is scaffold/runtime mode)
+- It does not send data anywhere — everything stays in `.akar/` on your machine
+- It is not a benchmark, cloud service, or plugin marketplace
+
+---
+
+## Quick start
 
 ```powershell
-# 1. Build
+# Build
 cargo build --release
 
-# 2. Verify
+# Verify
 akar --version
 
-# 3. Initialize your project
+# Initialise a project
 akar bootstrap
 akar doctor
-
-# 4. Run a task
-akar preflight "fix the login button"
-akar run "fix the login button"
-akar postmortem
 ```
 
 See [docs/INSTALL.md](docs/INSTALL.md) for full install instructions.
 
-## What it does
+---
 
-- Classifies prompts into task contracts with diff budgets
-- Runs honest verification (tests are evidence, not proof)
-- Detects skill conflicts and recommends safe execution modes
-- Records local telemetry and postmortem outcomes
-- Proposes learning patches when missions degrade or fail
-- Advises on request pressure strategy
+## Normal workflow
 
-## What it is not
+```
+akar bootstrap          # one-time project setup
+akar doctor             # confirm health
+akar preflight "task"   # review strategy before acting
+akar run "task"         # full workflow in one command
+akar postmortem         # review what happened
+akar learn              # propose a learning note if needed
+```
 
-- Not a local LLM, daemon, or vector DB
-- Not a replacement for Claude Code
-- Not an autonomous code editor (v0.2.x is scaffold/runtime mode)
-
-## Requirements
-
-- Rust 1.70+ / Cargo
-- Windows (primary target), macOS/Linux supported
+---
 
 ## Commands
 
 | Command | Description |
 |---|---|
-| `akar status` | Full runtime health at a glance |
-| `akar bootstrap` | Initialize project .akar/ with memory templates |
+| `akar status` | Runtime health at a glance |
+| `akar bootstrap` | Initialise `.akar/` with memory templates |
 | `akar doctor` | Read-only health check |
 | `akar doctor --fix` | Apply safe reversible fixes |
-| `akar preflight "<task>"` | Strategy review before executing |
-| `akar run "<task>"` | Stable workflow: preflight → mission → postmortem |
+| `akar preflight "<task>"` | Strategy review before acting |
+| `akar run "<task>"` | Full workflow: preflight → mission → postmortem |
 | `akar mission "<task>"` | Mission state machine (scaffold mode) |
-| `akar telemetry` | Show local event log summary |
-| `akar postmortem` | Review latest mission outcome |
-| `akar learn` | Propose learning patch if degraded/failed |
+| `akar telemetry` | Show local event log |
+| `akar postmortem` | Review latest outcome |
+| `akar learn` | Propose learning patch if degraded or failed |
 | `akar skills` | Skill registry with conflict detection |
 | `akar request` | Request pressure advisory |
 | `akar eval` | Run eval harness (28 scenarios) |
 | `akar verify` | Run verification recipe |
-| `akar safety "<cmd>"` | Classify command risk |
+| `akar safety "<cmd>"` | Classify command risk level |
 | `akar calibrate` | Model/gateway profile |
 | `akar hooks` | Hook install instructions |
 
-## Test
+---
 
-```powershell
-cargo test
+## Example output
+
 ```
+$ akar status
+status: HEALTHY
+  runtime:    akar 0.2.2
+  doctor:     OK
+  bootstrap:  OK
+  telemetry:  42 event(s)
+  postmortem: clean
+  skills:     OK
+  request:    NORMAL
+
+$ akar preflight "fix the login button"
+preflight:
+  task:         Bugfix
+  risk:         Low
+  diff_budget:  1-3 files, 5-60 LOC
+  request_mode: NORMAL
+  skills:       zero-skill mode (AKAR kernel only)
+  verification:
+    - run: cargo build
+    - run: cargo test
+  recommendation: Proceed — low risk task. Stay within diff budget
+```
+
+---
+
+## Project state
+
+- **Maturity:** early, local-first, scaffold mode
+- **Code execution:** not yet — AKAR classifies and records, does not edit files
+- **Data:** everything stays in `.akar/` on your machine, gitignored by default
+- **Global config:** AKAR does not edit `~/.claude/` unless you explicitly run `akar bootstrap`
+
+---
 
 ## Docs
 
 - [Install Guide](docs/INSTALL.md)
 - [Operating Model](docs/OPERATING_MODEL.md)
 - [Evaluation Plan](docs/EVALUATION_PLAN.md)
-- [Release Checklist](docs/RELEASE_CHECKLIST.md)
+- [Changelog](CHANGELOG.md)
 - [Architecture](docs/architecture/AKAR_OS.md)
-- [Roadmap](AKAR_MASTER_ROADMAP_v1.0_REVISED.md)
+- [Roadmap](docs/architecture/PRODUCT_ROADMAP.md)
 
-## Project layout
+---
 
-```
-akar/
-  src/                   # Rust CLI modules (21 modules)
-  docs/
-    architecture/        # AKAR OS, product roadmap, intelligence roadmap
-    kernel/              # 12 kernel policy docs
-    rfcs/                # RFC-0001 through RFC-0004
-    INSTALL.md
-    OPERATING_MODEL.md
-    EVALUATION_PLAN.md
-    RELEASE_CHECKLIST.md
-  templates/             # Memory file templates
-  .claude/commands/      # Claude Code slash commands
-  hooks/                 # Pre-commit hook scripts
-  .akar/                 # Project runtime state (gitignored artifacts)
-  Cargo.toml
-```
+## License
 
-Current version: **v0.2.1** — Install + Operating Model + Evaluation Plan
+License decision pending. Not yet open for redistribution.
+
+---
+
+## Requirements
+
+- Rust 1.70+ / Cargo
+- Windows (primary), macOS/Linux supported
