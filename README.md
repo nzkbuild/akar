@@ -1,60 +1,69 @@
 # AKAR — Adaptive Knowledge & Action Runtime
 
-AKAR is a lightweight, model-agnostic, self-healing engineering runtime for Claude Code. It turns casual user intent into disciplined engineering missions.
+AKAR is a local runtime governance layer for Claude Code. It classifies tasks, enforces diff budgets, runs verification, records telemetry, and summarizes outcomes.
+
+## Quickstart
+
+```powershell
+# 1. Build
+cargo build --release
+
+# 2. Verify
+akar --version
+
+# 3. Initialize your project
+akar bootstrap
+akar doctor
+
+# 4. Run a task
+akar preflight "fix the login button"
+akar run "fix the login button"
+akar postmortem
+```
+
+See [docs/INSTALL.md](docs/INSTALL.md) for full install instructions.
 
 ## What it does
 
-AKAR gives Claude Code a control layer:
-- compiles casual prompts into structured task contracts
-- enforces diff budgets to prevent overcoding
-- runs honest verification (tests are evidence, not proof)
-- self-heals broken config and tooling
-- evolves memory compactly without pollution
+- Classifies prompts into task contracts with diff budgets
+- Runs honest verification (tests are evidence, not proof)
+- Detects skill conflicts and recommends safe execution modes
+- Records local telemetry and postmortem outcomes
+- Proposes learning patches when missions degrade or fail
+- Advises on request pressure strategy
 
 ## What it is not
 
-- Not a local LLM
-- Not a daemon
-- Not a vector DB
+- Not a local LLM, daemon, or vector DB
 - Not a replacement for Claude Code
+- Not an autonomous code editor (v0.2.x is scaffold/runtime mode)
 
 ## Requirements
 
 - Rust 1.70+ / Cargo
 - Windows (primary target), macOS/Linux supported
 
-## Build
-
-```powershell
-cargo build --release
-```
-
-## Run
-
-```powershell
-# Check version
-cargo run -- --version
-
-# Show help
-cargo run -- --help
-```
-
 ## Commands
 
 | Command | Description |
 |---|---|
-| `akar status` | Runtime health, context pack, design check |
-| `akar doctor` | Read-only health check of config and memory |
+| `akar status` | Full runtime health at a glance |
+| `akar bootstrap` | Initialize project .akar/ with memory templates |
+| `akar doctor` | Read-only health check |
 | `akar doctor --fix` | Apply safe reversible fixes |
-| `akar bootstrap` | Initialize missing AKAR memory files |
-| `akar verify` | Run verification recipe honestly |
-| `akar eval` | Run all 20 eval scenarios |
-| `akar eval "<prompt>"` | Classify a prompt into a task contract |
-| `akar mission "<prompt>"` | Run full mission state machine |
-| `akar safety "<cmd>"` | Classify a shell command's risk level |
-| `akar skills` | List registered skills, check kernel conflicts |
-| `akar calibrate` | Show model/gateway profile |
-| `akar hooks` | Show hook paths and install instructions |
+| `akar preflight "<task>"` | Strategy review before executing |
+| `akar run "<task>"` | Stable workflow: preflight → mission → postmortem |
+| `akar mission "<task>"` | Mission state machine (scaffold mode) |
+| `akar telemetry` | Show local event log summary |
+| `akar postmortem` | Review latest mission outcome |
+| `akar learn` | Propose learning patch if degraded/failed |
+| `akar skills` | Skill registry with conflict detection |
+| `akar request` | Request pressure advisory |
+| `akar eval` | Run eval harness (28 scenarios) |
+| `akar verify` | Run verification recipe |
+| `akar safety "<cmd>"` | Classify command risk |
+| `akar calibrate` | Model/gateway profile |
+| `akar hooks` | Hook install instructions |
 
 ## Test
 
@@ -62,41 +71,33 @@ cargo run -- --help
 cargo test
 ```
 
+## Docs
+
+- [Install Guide](docs/INSTALL.md)
+- [Operating Model](docs/OPERATING_MODEL.md)
+- [Evaluation Plan](docs/EVALUATION_PLAN.md)
+- [Release Checklist](docs/RELEASE_CHECKLIST.md)
+- [Architecture](docs/architecture/AKAR_OS.md)
+- [Roadmap](AKAR_MASTER_ROADMAP_v1.0_REVISED.md)
+
 ## Project layout
 
 ```
 akar/
-  src/
-    main.rs            # CLI entry point and command dispatch
-    config.rs          # Path discovery and secret redaction
-    contract.rs        # Task contract and prompt classifier
-    context_pack.rs    # Context pack builder (HOT/WARM/COLD)
-    verify.rs          # Verification recipe and test intelligence
-    doctor.rs          # Read-only health checks
-    backup.rs          # File backup and restore
-    safe_fix.rs        # Safe reversible fixes
-    event_log.rs       # JSONL event log with rotation
-    mission.rs         # Mission state machine
-    design.rs          # Design quality module
-    safety.rs          # Command risk and secret detection
-    skill_registry.rs  # Skill registry and kernel priority checks
-    model_profile.rs   # Model/gateway drift detection
-    eval.rs            # 20-scenario eval harness
-    circuit_breaker.rs # Runaway retry prevention
+  src/                   # Rust CLI modules (21 modules)
   docs/
-    kernel/            # 12 kernel policy docs
-    AKAR_ADOPTION_NOTES.md
-  templates/           # Memory file templates (PROJECT_DNA, STATE, etc.)
-  .claude/commands/    # Claude Code slash commands
-  hooks/               # Pre-commit hook scripts (bash + powershell)
-  evals/               # Eval scenario files
-  examples/            # Usage examples
-  tests/               # Integration tests
+    architecture/        # AKAR OS, product roadmap, intelligence roadmap
+    kernel/              # 12 kernel policy docs
+    rfcs/                # RFC-0001 through RFC-0004
+    INSTALL.md
+    OPERATING_MODEL.md
+    EVALUATION_PLAN.md
+    RELEASE_CHECKLIST.md
+  templates/             # Memory file templates
+  .claude/commands/      # Claude Code slash commands
+  hooks/                 # Pre-commit hook scripts
+  .akar/                 # Project runtime state (gitignored artifacts)
   Cargo.toml
 ```
 
-## Roadmap
-
-See `AKAR_MASTER_ROADMAP_v1.0_REVISED.md` for the full phased plan.
-
-Current phase: **v1.0 Scaffold Complete**
+Current version: **v0.2.1** — Install + Operating Model + Evaluation Plan
