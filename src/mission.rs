@@ -79,7 +79,7 @@ impl Mission {
 // ---------------------------------------------------------------------------
 
 /// Walk `prompt` through the mission state machine and return the final `Mission`.
-pub fn run_mission(prompt: &str, _cfg: &config::Config) -> Mission {
+pub fn run_mission(prompt: &str, cfg: &config::Config) -> Mission {
     let mut m = Mission::new();
 
     // --- Intake ---
@@ -98,7 +98,7 @@ pub fn run_mission(prompt: &str, _cfg: &config::Config) -> Mission {
 
     // --- BuildContext ---
     m.state = MissionState::BuildContext;
-    let pack = context_pack::build_pack(_cfg);
+    let pack = context_pack::build_pack(cfg);
     let hot_count = pack
         .files
         .iter()
@@ -125,6 +125,7 @@ pub fn run_mission(prompt: &str, _cfg: &config::Config) -> Mission {
         m.warnings.push("contract sanity check failed: files_max == 0".to_string());
         m.log("contract", "FAILED: contract sanity check");
         m.state = MissionState::Failed;
+        write_telemetry_event(&m, cfg);
         return m;
     }
     m.log("contract", "contract sanity check passed");
@@ -135,10 +136,9 @@ pub fn run_mission(prompt: &str, _cfg: &config::Config) -> Mission {
 
     // --- Verify ---
     m.state = MissionState::Verify;
-    let project_root = _cfg.project_root.clone();
+    let project_root = cfg.project_root.clone();
     let recipe = verify::detect_recipe(&project_root);
 
-    // Log the recipe name (first command name or "manual-only") without running it.
     let recipe_label = if recipe.commands.is_empty() {
         "manual-only".to_string()
     } else {
@@ -157,7 +157,6 @@ pub fn run_mission(prompt: &str, _cfg: &config::Config) -> Mission {
     m.state = MissionState::Review;
     if let Some(tc) = &m.contract {
         if !tc.stop_conditions.is_empty() {
-            // Stop conditions exist — log them as a note, not a blocker in scaffold mode.
             m.log(
                 "review",
                 &format!("{} stop condition(s) pending review", tc.stop_conditions.len()),
@@ -175,7 +174,59 @@ pub fn run_mission(prompt: &str, _cfg: &config::Config) -> Mission {
     m.state = MissionState::Done;
     m.log("done", "mission complete");
 
+    write_telemetry_event(&m, cfg);
     m
+}
+
+/// Append a compact telemetry event to `.akar/EVENT_LOG.jsonl`.
+/// Silently skips if .akar/ does not exist — never crashes the caller.
+fn write_telemetry_event(m: &Mission, cfg: &config::Config) {
+    // Only write if .akar/ exists — don't auto-create dirs from mission.
+    if !cfg.akar_dir.exists() {
+        return;
+    }
+    let log_path = cfg.akar_dir.join("EVENT_LOG.jsonl");
+
+    let (task_type, risk, autonomy) = if let Some(tc) = &m.contract {
+        (
+            format!("{:?}", tc.task_type),
+            format!("{:?}", tc.risk_level),
+            format!("{:?}", tc.autonomy),
+        )
+    } else {
+        ("unknown".to_string(), "unknown".to_string(), "unknown".to_string())
+    };
+
+    // Truncate prompt to 80 chars and redact potential secrets.
+    let prompt_preview = crate::config::redact(
+        &m.prompt.chars().take(80).collect::<String>()
+    );
+
+    let state_str = match m.state {
+        MissionState::Done => "done",
+        MissionState::Failed => "failed",
+        MissionState::Blocked => "blocked",
+        _ => "unknown",
+    };
+
+    let summary = format!(
+        "mission/{} task={} risk={} autonomy={} warnings={} prompt={}",
+        state_str, task_type, risk, autonomy, m.warnings.len(), prompt_preview
+    );
+
+    let entry = event_log::EventEntry {
+        ts: event_log::now_iso8601(),
+        project: cfg.project_name.clone(),
+        model: "unknown".to_string(),
+        event: if m.state == MissionState::Done { "success".to_string() } else { "failure".to_string() },
+        event_type: "mission".to_string(),
+        summary,
+        resolution: state_str.to_string(),
+        confidence: "medium".to_string(),
+    };
+
+    // Best-effort — ignore write errors so mission output is not disrupted.
+    let _ = event_log::append_event(&log_path, &entry);
 }
 
 // ---------------------------------------------------------------------------

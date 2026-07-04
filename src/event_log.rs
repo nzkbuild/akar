@@ -120,6 +120,66 @@ pub fn read_recent(log_path: &Path, n: usize) -> Vec<String> {
     lines[start..].to_vec()
 }
 
+/// Return current UTC time as a compact ISO 8601 string (seconds precision).
+/// Uses UNIX_EPOCH + SystemTime — no external dependencies.
+pub fn now_iso8601() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // Convert seconds since epoch to YYYY-MM-DDTHH:MM:SSZ
+    let s = secs;
+    let (mut y, mut m, mut d) = (1970u64, 1u64, 1u64);
+    let mut remaining = s;
+    loop {
+        let days_in_year = if is_leap(y) { 366 } else { 365 };
+        if remaining < days_in_year * 86400 {
+            break;
+        }
+        remaining -= days_in_year * 86400;
+        y += 1;
+    }
+    let month_days: [u64; 12] = [31, if is_leap(y) { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    for days in month_days {
+        if remaining < days * 86400 {
+            break;
+        }
+        remaining -= days * 86400;
+        m += 1;
+    }
+    d += remaining / 86400;
+    remaining %= 86400;
+    let hh = remaining / 3600;
+    remaining %= 3600;
+    let mm = remaining / 60;
+    let ss = remaining % 60;
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, hh, mm, ss)
+}
+
+fn is_leap(y: u64) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+/// A brief summary of the event log for display in `akar telemetry`.
+pub struct LogSummary {
+    pub total_events: usize,
+    pub recent: Vec<String>,
+    pub exists: bool,
+}
+
+/// Summarise the event log at `log_path` for human display.
+/// Returns a `LogSummary` — never panics.
+pub fn summarize_log(log_path: &Path, recent_n: usize) -> LogSummary {
+    if !log_path.exists() {
+        return LogSummary { total_events: 0, recent: Vec::new(), exists: false };
+    }
+    let all = read_recent(log_path, usize::MAX);
+    let total = all.len();
+    let recent = read_recent(log_path, recent_n);
+    LogSummary { total_events: total, recent, exists: true }
+}
+
 /// Rotate the log file if it exceeds `max_bytes`.
 ///
 /// Renames `log_path` to `log_path` + `".bak"`, overwriting any existing `.bak`.

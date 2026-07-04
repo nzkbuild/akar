@@ -332,9 +332,27 @@ fn cmd_postmortem() {
 }
 
 fn cmd_telemetry() {
-    println!("telemetry: not yet implemented");
-    println!("  hint: telemetry shows compact operational metrics from EVENT_LOG.jsonl");
-    println!("  status: stub (v0.1.1 architecture refinement)");
+    let cfg = config::Config::discover();
+    let log_path = cfg.akar_dir.join("EVENT_LOG.jsonl");
+    let summary = event_log::summarize_log(&log_path, 10);
+
+    if !summary.exists {
+        println!("telemetry: no events recorded yet");
+        println!("  log: {}", log_path.display());
+        println!("  hint: run 'akar mission <prompt>' to record your first event");
+        return;
+    }
+
+    println!("telemetry: {} event(s) total", summary.total_events);
+    println!("  log: {}", log_path.display());
+    if !summary.recent.is_empty() {
+        println!("  recent ({}):", summary.recent.len());
+        for line in &summary.recent {
+            // Print a trimmed preview of each JSON line
+            let preview = if line.len() > 120 { &line[..120] } else { line };
+            println!("    {}", preview);
+        }
+    }
 }
 
 #[cfg(test)]
