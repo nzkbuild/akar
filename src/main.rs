@@ -8,6 +8,7 @@ mod design;
 mod doctor;
 mod eval;
 mod event_log;
+mod learn;
 mod mission;
 mod model_profile;
 mod postmortem;
@@ -67,6 +68,7 @@ fn main() {
         "calibrate" => cmd_calibrate(),
         "postmortem" => cmd_postmortem(),
         "telemetry" => cmd_telemetry(),
+        "learn" => cmd_learn(),
         other => {
             eprintln!("akar: unknown command '{}'", other);
             eprintln!("Run 'akar --help' for usage.");
@@ -95,6 +97,7 @@ fn print_usage() {
     println!("  calibrate         Show model/gateway profile for the current session");
     println!("  postmortem        Analyze mission failures and generate learning patches");
     println!("  telemetry         Show compact operational metrics from EVENT_LOG.jsonl");
+    println!("  learn             Generate a learning patch from latest postmortem evidence");
     println!();
     println!("FLAGS:");
     println!("  --version   Print version");
@@ -331,6 +334,12 @@ fn cmd_postmortem() {
     let log_path = cfg.akar_dir.join("EVENT_LOG.jsonl");
     let report = postmortem::run_postmortem(&log_path);
     print!("{}", postmortem::format_postmortem_report(&report));
+}
+
+fn cmd_learn() {
+    let cfg = config::Config::discover();
+    let result = learn::run_learn(&cfg);
+    print!("{}", learn::format_learn_result(&result));
 }
 
 fn cmd_telemetry() {
