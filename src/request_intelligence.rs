@@ -5,6 +5,7 @@
 //! - postmortem outcome
 //! - manually supplied used/limit counts (optional)
 
+#[allow(unused_imports)]
 use std::path::Path;
 use crate::{config, event_log, postmortem};
 

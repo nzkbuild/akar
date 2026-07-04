@@ -12,6 +12,7 @@ mod learn;
 mod mission;
 mod model_profile;
 mod postmortem;
+mod preflight;
 mod request_intelligence;
 mod safe_fix;
 mod safety;
@@ -70,6 +71,20 @@ fn main() {
         "postmortem" => cmd_postmortem(),
         "telemetry" => cmd_telemetry(),
         "learn" => cmd_learn(),
+        "preflight" => {
+            let prompt_args: Vec<&str> = args[2..].iter()
+                .take_while(|s| !s.starts_with("--"))
+                .map(|s| s.as_str())
+                .collect();
+            let used = parse_flag_u64(&args, "--used");
+            let limit = parse_flag_u64(&args, "--limit");
+            if prompt_args.is_empty() {
+                println!("akar preflight \"<task prompt>\"");
+                println!("  example: akar preflight \"fix the login button\"");
+            } else {
+                cmd_preflight(&prompt_args.join(" "), used, limit);
+            }
+        }
         "request" => {
             let used = parse_flag_u64(&args, "--used");
             let limit = parse_flag_u64(&args, "--limit");
@@ -105,6 +120,7 @@ fn print_usage() {
     println!("  postmortem        Analyze mission failures and generate learning patches");
     println!("  telemetry         Show compact operational metrics from EVENT_LOG.jsonl");
     println!("  learn             Generate a learning patch from latest postmortem evidence");
+    println!("  preflight <task>  Show mission strategy before executing a task");
     println!("  request           Show request pressure mode and strategy advisory");
     println!("  request --used N --limit M  Supply explicit request counts for pressure mode");
     println!();
@@ -349,6 +365,12 @@ fn cmd_learn() {
     let cfg = config::Config::discover();
     let result = learn::run_learn(&cfg);
     print!("{}", learn::format_learn_result(&result));
+}
+
+fn cmd_preflight(prompt: &str, used: Option<u64>, limit: Option<u64>) {
+    let cfg = config::Config::discover();
+    let report = preflight::run_preflight(prompt, &cfg, used, limit);
+    print!("{}", preflight::format_preflight_report(&report));
 }
 
 fn cmd_request(used: Option<u64>, limit: Option<u64>, prompt: Option<String>) {
