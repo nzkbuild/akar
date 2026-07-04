@@ -20,6 +20,7 @@ pub struct VerifyCommand {
     /// Arguments, e.g. `["test"]`.
     pub args: Vec<String>,
     /// If `true`, a failure here is blocking.
+    #[allow(dead_code)]
     pub required: bool,
 }
 
@@ -73,6 +74,7 @@ pub struct VerifyResult {
     /// Whether the command exited successfully.
     pub passed: bool,
     /// Combined stdout + stderr output.
+    #[allow(dead_code)]
     pub output: String,
     /// Populated only when `passed == false`.
     pub failure_class: Option<TestFailureClass>,

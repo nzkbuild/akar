@@ -46,7 +46,9 @@ pub struct SkillEntry {
     pub name: String,
     pub source: SkillSource,
     pub purpose: String,
+    #[allow(dead_code)]
     pub risk: String,
+    #[allow(dead_code)]
     pub token_cost: String,
     pub status: SkillStatus,
     pub role: SkillRole,

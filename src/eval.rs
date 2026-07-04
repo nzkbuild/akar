@@ -12,6 +12,7 @@ use crate::{backup, config, context_pack, contract, design, doctor, event_log, s
 pub struct EvalResult {
     pub name: String,
     pub passed: bool,
+    #[allow(dead_code)]
     pub detail: String,
 }
 
@@ -284,6 +285,7 @@ pub fn run_evals(cfg: &config::Config) -> EvalSuite {
         let content = b"eval backup content";
 
         let mut ok = false;
+        #[allow(unused_assignments)]
         let mut detail = String::new();
 
         // Write original

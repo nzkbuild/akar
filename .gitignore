@@ -1,1 +1,17 @@
 /target
+
+# AKAR runtime artifacts — local only, not project history
+.akar/EVENT_LOG.jsonl
+.akar/EVENT_LOG.jsonl.bak
+.akar/*.bak.*
+.akar/reports/
+.akar/cache/
+.akar/tmp/
+
+# Test output artifacts
+test_output*.txt
+reports/
+
+# Environment
+.env
+*.env.local

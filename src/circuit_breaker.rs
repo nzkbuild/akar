@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 /// Prevents runaway retry loops by tripping after max_failures.
 #[derive(Debug, Clone)]
 pub struct CircuitBreaker {
