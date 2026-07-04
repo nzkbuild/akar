@@ -12,6 +12,7 @@ mod learn;
 mod mission;
 mod model_profile;
 mod postmortem;
+mod request_intelligence;
 mod safe_fix;
 mod safety;
 mod skill_registry;
@@ -69,6 +70,12 @@ fn main() {
         "postmortem" => cmd_postmortem(),
         "telemetry" => cmd_telemetry(),
         "learn" => cmd_learn(),
+        "request" => {
+            let used = parse_flag_u64(&args, "--used");
+            let limit = parse_flag_u64(&args, "--limit");
+            let prompt = parse_flag_str(&args, "--prompt");
+            cmd_request(used, limit, prompt);
+        }
         other => {
             eprintln!("akar: unknown command '{}'", other);
             eprintln!("Run 'akar --help' for usage.");
@@ -98,6 +105,8 @@ fn print_usage() {
     println!("  postmortem        Analyze mission failures and generate learning patches");
     println!("  telemetry         Show compact operational metrics from EVENT_LOG.jsonl");
     println!("  learn             Generate a learning patch from latest postmortem evidence");
+    println!("  request           Show request pressure mode and strategy advisory");
+    println!("  request --used N --limit M  Supply explicit request counts for pressure mode");
     println!();
     println!("FLAGS:");
     println!("  --version   Print version");
@@ -340,6 +349,30 @@ fn cmd_learn() {
     let cfg = config::Config::discover();
     let result = learn::run_learn(&cfg);
     print!("{}", learn::format_learn_result(&result));
+}
+
+fn cmd_request(used: Option<u64>, limit: Option<u64>, prompt: Option<String>) {
+    let cfg = config::Config::discover();
+    let signals = request_intelligence::RequestSignals { used, limit, prompt };
+    let advisory = request_intelligence::build_advisory(&cfg, &signals);
+    print!("{}", request_intelligence::format_advisory(&advisory));
+    if advisory.next_run_recommended {
+        if let Some(path) = request_intelligence::write_next_run(&cfg, "resume from last mission") {
+            println!("  wrote: {}", path.display());
+        }
+    }
+}
+
+fn parse_flag_u64(args: &[String], flag: &str) -> Option<u64> {
+    args.windows(2)
+        .find(|w| w[0] == flag)
+        .and_then(|w| w[1].parse::<u64>().ok())
+}
+
+fn parse_flag_str(args: &[String], flag: &str) -> Option<String> {
+    args.windows(2)
+        .find(|w| w[0] == flag)
+        .map(|w| w[1].clone())
 }
 
 fn cmd_telemetry() {
