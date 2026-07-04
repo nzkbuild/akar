@@ -310,18 +310,18 @@ fn cmd_hooks() {
 
 fn cmd_skills() {
     let cfg = config::Config::discover();
-    // Scan ~/.claude/ (the global Claude dir, parent of akar/)
     let claude_dir = cfg.global_dir
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| config::home_dir().join(".claude"));
 
-    let skills = skill_registry::scan_skills(&claude_dir);
-    print!("{}", skill_registry::format_registry(&skills));
+    let skills = skill_registry::scan_multi(&claude_dir, &cfg.project_root);
+    let report = skill_registry::build_skill_report(&skills);
+    print!("{}", skill_registry::format_skill_report(&report));
 
-    let warnings = skill_registry::check_kernel_priority(&skills);
-    for w in &warnings {
-        println!("{}", w);
+    // Write inventory to .akar/SKILL_INVENTORY.md if .akar exists.
+    if let Some(path) = skill_registry::write_skill_inventory(&cfg, &skills, &report) {
+        println!("  inventory: {}", path.display());
     }
 }
 

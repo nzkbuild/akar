@@ -55,10 +55,12 @@ pub struct RequestSignals {
     /// Manually supplied request limit, if known.
     pub limit: Option<u64>,
     /// Prompt to analyse for length (redacted before storage).
+    #[allow(dead_code)]
     pub prompt: Option<String>,
 }
 
 impl RequestSignals {
+    #[allow(dead_code)]
     pub fn empty() -> Self {
         RequestSignals { used: None, limit: None, prompt: None }
     }

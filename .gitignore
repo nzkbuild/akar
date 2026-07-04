@@ -7,6 +7,9 @@
 .akar/reports/
 .akar/cache/
 .akar/tmp/
+.akar/SKILL_INVENTORY.md
+.akar/NEXT_RUN.md
+.akar/LEARNING_PATCHES.md
 
 # Test output artifacts
 test_output*.txt

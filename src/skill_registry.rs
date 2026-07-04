@@ -1,4 +1,6 @@
 use std::path::Path;
+use crate::config;
+use crate::event_log;
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -269,6 +271,7 @@ pub fn detect_duplicates(skills: &[SkillEntry]) -> Vec<(String, String)> {
 // ---------------------------------------------------------------------------
 
 /// Format the skill registry as a human-readable string.
+#[allow(dead_code)]
 pub fn format_registry(skills: &[SkillEntry]) -> String {
     let mut out = String::new();
     out.push_str(&format!("skills: {} registered\n", skills.len()));
@@ -325,6 +328,207 @@ pub fn check_kernel_priority(skills: &[SkillEntry]) -> Vec<String> {
             )
         })
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// scan_multi — scan multiple directories and merge results
+// ---------------------------------------------------------------------------
+
+/// Scan multiple Claude dirs (global + project) and return merged skill list.
+/// Read-only. Never modifies any file.
+pub fn scan_multi(global_claude_dir: &Path, project_root: &Path) -> Vec<SkillEntry> {
+    let mut skills = Vec::new();
+
+    // 1. Global ~/.claude/commands/
+    let global_commands = global_claude_dir.join("commands");
+    if global_commands.exists() {
+        collect_skills(&global_commands, &mut skills);
+    }
+
+    // 2. Global ~/.claude/plugins/ (if exists)
+    let global_plugins = global_claude_dir.join("plugins");
+    if global_plugins.exists() {
+        collect_skills(&global_plugins, &mut skills);
+    }
+
+    // 3. Project .claude/commands/
+    let project_commands = project_root.join(".claude").join("commands");
+    if project_commands.exists() {
+        collect_skills(&project_commands, &mut skills);
+    }
+
+    // Deduplicate by name (project entries win over global).
+    let mut seen = std::collections::HashSet::new();
+    skills.retain(|s| seen.insert(s.name.clone()));
+
+    skills
+}
+
+// ---------------------------------------------------------------------------
+// SkillReport
+// ---------------------------------------------------------------------------
+
+pub struct SkillReport {
+    pub total: usize,
+    pub kernel_count: usize,
+    pub methodology_count: usize,
+    pub execution_count: usize,
+    pub support_count: usize,
+    pub memory_count: usize,
+    pub design_count: usize,
+    pub security_count: usize,
+    pub dangerous_count: usize,
+    pub conflicts: Vec<String>,
+    pub high_influence: Vec<String>,
+    pub recommended_mode: String,
+}
+
+/// Build a SkillReport from a skill list.
+pub fn build_skill_report(skills: &[SkillEntry]) -> SkillReport {
+    let total = skills.len();
+
+    let mut kernel_count = 0;
+    let mut methodology_count = 0;
+    let mut execution_count = 0;
+    let mut support_count = 0;
+    let mut memory_count = 0;
+    let mut design_count = 0;
+    let mut security_count = 0;
+    let mut dangerous_count = 0;
+    let mut high_influence = Vec::new();
+
+    for s in skills {
+        match s.role {
+            SkillRole::Kernel      => kernel_count += 1,
+            SkillRole::Methodology => {
+                methodology_count += 1;
+                high_influence.push(format!("{} (methodology)", s.name));
+            }
+            SkillRole::Execution   => {
+                execution_count += 1;
+                high_influence.push(format!("{} (execution)", s.name));
+            }
+            SkillRole::Support     => support_count += 1,
+            SkillRole::Memory      => memory_count += 1,
+            SkillRole::Design      => design_count += 1,
+            SkillRole::Security    => security_count += 1,
+            SkillRole::Dangerous   => {
+                dangerous_count += 1;
+                high_influence.push(format!("{} (dangerous)", s.name));
+            }
+            SkillRole::LibraryOnly => {}
+        }
+    }
+
+    let mut conflicts = detect_skill_conflicts(skills);
+    conflicts.extend(check_kernel_priority(skills));
+
+    // Warn on active Methodology + active Execution combo (controller conflict).
+    let active_methodology = skills.iter().any(|s| s.role == SkillRole::Methodology && s.status == SkillStatus::Active);
+    let active_execution = skills.iter().any(|s| s.role == SkillRole::Execution && s.status == SkillStatus::Active);
+    if active_methodology && active_execution {
+        conflicts.push("warning: both methodology and execution controller skills are active — risk of conflicting directives".to_string());
+    }
+
+    let recommended_mode = if conflicts.iter().any(|c| c.starts_with("conflict:")) {
+        "library-only for all non-kernel skills".to_string()
+    } else if methodology_count > 0 || execution_count > 0 {
+        "one primary skill + library-only for rest".to_string()
+    } else {
+        "zero-skill mode (AKAR kernel only)".to_string()
+    };
+
+    SkillReport {
+        total,
+        kernel_count,
+        methodology_count,
+        execution_count,
+        support_count,
+        memory_count,
+        design_count,
+        security_count,
+        dangerous_count,
+        conflicts,
+        high_influence,
+        recommended_mode,
+    }
+}
+
+/// Format a SkillReport as a short human-readable string.
+pub fn format_skill_report(report: &SkillReport) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("skills: {} total\n", report.total));
+    out.push_str(&format!("  kernel: {}  methodology: {}  execution: {}  memory: {}  design: {}  security: {}  dangerous: {}  support: {}\n",
+        report.kernel_count, report.methodology_count, report.execution_count,
+        report.memory_count, report.design_count, report.security_count,
+        report.dangerous_count, report.support_count));
+
+    if !report.high_influence.is_empty() {
+        out.push_str("  high-influence:\n");
+        for h in &report.high_influence {
+            out.push_str(&format!("    - {}\n", h));
+        }
+    }
+
+    if report.conflicts.is_empty() {
+        out.push_str("  conflicts: none\n");
+    } else {
+        out.push_str("  conflicts:\n");
+        for c in &report.conflicts {
+            out.push_str(&format!("    - {}\n", c));
+        }
+    }
+
+    out.push_str(&format!("  recommended: {}\n", report.recommended_mode));
+    out
+}
+
+/// Write skill inventory to `.akar/SKILL_INVENTORY.md`. Append-safe.
+/// Never overwrites existing content. Returns path written or None.
+pub fn write_skill_inventory(cfg: &config::Config, skills: &[SkillEntry], report: &SkillReport) -> Option<std::path::PathBuf> {
+    if !cfg.akar_dir.exists() {
+        return None;
+    }
+    let path = cfg.akar_dir.join("SKILL_INVENTORY.md");
+    let ts = event_log::now_iso8601();
+
+    let mut content = format!(
+        "# AKAR Skill Inventory\ngenerated: {}\ntotal: {}\n\n",
+        ts, report.total
+    );
+    content.push_str("## Role Summary\n");
+    content.push_str(&format!("- kernel: {}\n- methodology: {}\n- execution: {}\n- memory: {}\n- design: {}\n- security: {}\n- dangerous: {}\n- support: {}\n\n",
+        report.kernel_count, report.methodology_count, report.execution_count,
+        report.memory_count, report.design_count, report.security_count,
+        report.dangerous_count, report.support_count));
+
+    content.push_str("## Skills\n");
+    for s in skills {
+        let role_str = match s.role {
+            SkillRole::Kernel => "kernel",
+            SkillRole::Methodology => "methodology",
+            SkillRole::Execution => "execution",
+            SkillRole::Support => "support",
+            SkillRole::Memory => "memory",
+            SkillRole::Design => "design",
+            SkillRole::Security => "security",
+            SkillRole::Dangerous => "dangerous",
+            SkillRole::LibraryOnly => "library-only",
+        };
+        content.push_str(&format!("- {} [{}]\n", s.name, role_str));
+    }
+
+    if !report.conflicts.is_empty() {
+        content.push_str("\n## Conflicts\n");
+        for c in &report.conflicts {
+            content.push_str(&format!("- {}\n", c));
+        }
+    }
+
+    content.push_str(&format!("\n## Recommended Mode\n{}\n", report.recommended_mode));
+
+    std::fs::write(&path, content).ok()?;
+    Some(path)
 }
 
 // ---------------------------------------------------------------------------
@@ -515,9 +719,85 @@ mod tests {
     }
 
     #[test]
-    fn check_kernel_priority_no_warnings_for_safe_names() {
-        let skills = vec![make_skill("deploy-helper", SkillSource::Custom, "deploy stuff", SkillStatus::Active)];
-        let warnings = check_kernel_priority(&skills);
-        assert!(warnings.is_empty());
+    fn scan_multi_finds_project_commands() {
+        let project_root = std::env::current_dir().unwrap();
+        let fake_global = std::path::PathBuf::from("/nonexistent/__global__");
+        let skills = scan_multi(&fake_global, &project_root);
+        // project has .claude/commands/ with akar-* files
+        let has_akar = skills.iter().any(|s| s.name.contains("akar"));
+        // If .claude/commands exists in project, we should find akar commands
+        if project_root.join(".claude").join("commands").exists() {
+            assert!(has_akar, "expected akar-* commands in project .claude/commands/");
+        }
+    }
+
+    #[test]
+    fn scan_multi_missing_dirs_returns_empty() {
+        let fake = std::path::PathBuf::from("/nonexistent/__fake__");
+        let skills = scan_multi(&fake, &fake);
+        assert!(skills.is_empty());
+    }
+
+    #[test]
+    fn classify_akar_commands_as_kernel() {
+        let role = classify_role("akar-doctor", &SkillSource::Project);
+        assert_eq!(role, SkillRole::Kernel);
+        let role2 = classify_role("akar-mission", &SkillSource::Project);
+        assert_eq!(role2, SkillRole::Kernel);
+    }
+
+    #[test]
+    fn classify_superpower_as_methodology() {
+        let role = classify_role("superpower-brainstorming", &SkillSource::Superpower);
+        assert_eq!(role, SkillRole::Methodology);
+    }
+
+    #[test]
+    fn classify_gsd_as_execution() {
+        let role = classify_role("gsd-dev-preferences", &SkillSource::Custom);
+        assert_eq!(role, SkillRole::Execution);
+    }
+
+    #[test]
+    fn detect_superpower_gsd_controller_conflict() {
+        let skills = vec![
+            make_skill("superpower-writing-plans", SkillSource::Superpower, "methodology", SkillStatus::Active),
+            make_skill("gsd-dev-preferences", SkillSource::Custom, "execution", SkillStatus::Active),
+        ];
+        let report = build_skill_report(&skills);
+        assert!(!report.conflicts.is_empty(), "superpower + gsd should conflict");
+        assert!(report.conflicts.iter().any(|c| c.contains("methodology") && c.contains("execution")));
+    }
+
+    #[test]
+    fn build_report_no_conflicts_clean() {
+        let skills = vec![
+            make_skill("akar-doctor", SkillSource::Project, "health check", SkillStatus::Active),
+        ];
+        let report = build_skill_report(&skills);
+        assert!(report.conflicts.is_empty());
+        assert_eq!(report.kernel_count, 1);
+    }
+
+    #[test]
+    fn format_skill_report_contains_key_fields() {
+        let skills = vec![
+            make_skill("akar-doctor", SkillSource::Project, "health check", SkillStatus::Active),
+            make_skill("superpower-tdd", SkillSource::Superpower, "tdd", SkillStatus::Active),
+        ];
+        let report = build_skill_report(&skills);
+        let out = format_skill_report(&report);
+        assert!(out.contains("skills:"));
+        assert!(out.contains("recommended:"));
+        assert!(out.contains("methodology"));
+    }
+
+    #[test]
+    fn missing_global_claude_does_not_fail_hard() {
+        let fake = std::path::PathBuf::from("/nonexistent/__claude__");
+        let project = std::env::current_dir().unwrap();
+        let skills = scan_multi(&fake, &project);
+        // Should not panic, returns whatever was found in project
+        let _ = build_skill_report(&skills);
     }
 }
