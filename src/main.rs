@@ -10,6 +10,7 @@ mod eval;
 mod event_log;
 mod mission;
 mod model_profile;
+mod postmortem;
 mod safe_fix;
 mod safety;
 mod skill_registry;
@@ -326,9 +327,10 @@ fn cmd_calibrate() {
 }
 
 fn cmd_postmortem() {
-    println!("postmortem: not yet implemented");
-    println!("  hint: postmortem analyzes mission failures and generates learning patches");
-    println!("  status: stub (v0.1.1 architecture refinement)");
+    let cfg = config::Config::discover();
+    let log_path = cfg.akar_dir.join("EVENT_LOG.jsonl");
+    let report = postmortem::run_postmortem(&log_path);
+    print!("{}", postmortem::format_postmortem_report(&report));
 }
 
 fn cmd_telemetry() {
