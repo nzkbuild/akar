@@ -1,4 +1,5 @@
 mod backup;
+mod bootstrap;
 mod circuit_breaker;
 mod config;
 mod context_pack;
@@ -223,10 +224,9 @@ fn cmd_doctor(fix_mode: bool) {
 }
 
 fn cmd_bootstrap() {
-    println!("bootstrap: ready");
-    println!("  project: detected");
-    println!("  memory templates: not yet implemented");
-    println!("  note: full bootstrap engine coming in Phase 4");
+    let cfg = config::Config::discover();
+    let result = bootstrap::run_bootstrap(&cfg);
+    print!("{}", bootstrap::format_bootstrap_report(&result));
 }
 
 fn cmd_verify() {
