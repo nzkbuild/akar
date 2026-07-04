@@ -1,0 +1,1 @@
+The user wants to run an AKAR mission. Run `akar mission $ARGUMENTS` in the terminal and report the structured output. Use the mission report to guide your engineering work — respect the diff budget, task type, and risk level shown.

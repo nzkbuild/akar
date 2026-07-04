@@ -1,0 +1,11 @@
+{
+  "_comment": "This is an example settings snippet for AKAR integration. Merge the relevant parts into your ~/.claude/settings.json — do not use this file directly.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": []
+      }
+    ]
+  }
+}

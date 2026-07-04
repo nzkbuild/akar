@@ -1,0 +1,323 @@
+warning: variant `External` is never constructed
+  --> src\context_pack.rs:15:5
+   |
+11 | pub enum ContextTier {
+   |          ----------- variant in this enum
+...
+15 |     External,
+   |     ^^^^^^^^
+   |
+   = note: `ContextTier` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `reason` is never read
+  --> src\context_pack.rs:22:9
+   |
+19 | pub struct ContextFile {
+   |            ----------- field in this struct
+...
+22 |     pub reason: String,
+   |         ^^^^^^
+   |
+   = note: `ContextFile` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `Answer`, `Inspect`, `Research`, `Greenfield`, `Repair`, and `Release` are never constructed
+  --> src\contract.rs:12:5
+   |
+11 | pub enum TaskType {
+   |          -------- variants in this enum
+12 |     Answer,
+   |     ^^^^^^
+13 |     Inspect,
+   |     ^^^^^^^
+...
+18 |     Research,
+   |     ^^^^^^^^
+19 |     Security,
+20 |     Greenfield,
+   |     ^^^^^^^^^^
+21 |     Repair,
+   |     ^^^^^^
+...
+24 |     Release,
+   |     ^^^^^^^
+   |
+   = note: `TaskType` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `A0`, `A1`, `A2`, `A3`, `A4`, and `A6` are never constructed
+  --> src\contract.rs:29:5
+   |
+28 | pub enum Autonomy {
+   |          -------- variants in this enum
+29 |     A0,
+   |     ^^
+30 |     A1,
+   |     ^^
+31 |     A2,
+   |     ^^
+32 |     A3,
+   |     ^^
+33 |     A4,
+   |     ^^
+34 |     A5,
+35 |     A6,
+   |     ^^
+   |
+   = note: `Autonomy` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `Fast`, `Deep`, `Autopilot`, and `Emergency` are never constructed
+  --> src\contract.rs:40:5
+   |
+39 | pub enum CostMode {
+   |          -------- variants in this enum
+40 |     Fast,
+   |     ^^^^
+41 |     Balanced,
+42 |     Deep,
+   |     ^^^^
+43 |     Autopilot,
+   |     ^^^^^^^^^
+44 |     Emergency,
+   |     ^^^^^^^^^
+   |
+   = note: `CostMode` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variant `Critical` is never constructed
+  --> src\contract.rs:52:5
+   |
+48 | pub enum RiskLevel {
+   |          --------- variant in this enum
+...
+52 |     Critical,
+   |     ^^^^^^^^
+   |
+   = note: `RiskLevel` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `Low` and `High` are never constructed
+  --> src\contract.rs:57:5
+   |
+56 | pub enum Confidence {
+   |          ---------- variants in this enum
+57 |     Low,
+   |     ^^^
+58 |     Medium,
+59 |     High,
+   |     ^^^^
+   |
+   = note: `Confidence` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `Warning` and `Info` are never constructed
+  --> src\doctor.rs:15:5
+   |
+13 | pub enum Severity {
+   |          -------- variants in this enum
+14 |     Error,
+15 |     Warning,
+   |     ^^^^^^^
+16 |     Info,
+   |     ^^^^
+   |
+   = note: `Severity` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variant `CreateFromTemplate` is never constructed
+  --> src\doctor.rs:34:5
+   |
+30 | pub enum FixHint {
+   |          ------- variant in this enum
+...
+34 |     CreateFromTemplate { dest: PathBuf, template_name: String },
+   |     ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `FixHint` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variant `Blocked` is never constructed
+  --> src\mission.rs:29:5
+   |
+17 | pub enum MissionState {
+   |          ------------ variant in this enum
+...
+29 |     Blocked,
+   |     ^^^^^^^
+   |
+   = note: `MissionState` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variant `ClaudeBundled` is never constructed
+ --> src\skill_registry.rs:9:5
+  |
+8 | pub enum SkillSource {
+  |          ----------- variant in this enum
+9 |     ClaudeBundled,
+  |     ^^^^^^^^^^^^^
+  |
+  = note: `SkillSource` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `Wrapped`, `Disabled`, `Replaced`, and `Testing` are never constructed
+  --> src\skill_registry.rs:18:5
+   |
+16 | pub enum SkillStatus {
+   |          ----------- variants in this enum
+17 |     Active,
+18 |     Wrapped,
+   |     ^^^^^^^
+19 |     Disabled,
+   |     ^^^^^^^^
+20 |     Replaced,
+   |     ^^^^^^^^
+21 |     Testing,
+   |     ^^^^^^^
+   |
+   = note: `SkillStatus` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `risk` and `token_cost` are never read
+  --> src\skill_registry.rs:33:9
+   |
+29 | pub struct SkillEntry {
+   |            ---------- fields in this struct
+...
+33 |     pub risk: String,
+   |         ^^^^
+34 |     pub token_cost: String,
+   |         ^^^^^^^^^^
+   |
+   = note: `SkillEntry` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `TestStale`, `TestSetupWrong`, and `CoverageGap` are never constructed
+  --> src\verify.rs:43:5
+   |
+39 | pub enum TestFailureClass {
+   |          ---------------- variants in this enum
+...
+43 |     TestStale,
+   |     ^^^^^^^^^
+44 |     /// Test scaffolding / fixtures are broken.
+45 |     TestSetupWrong,
+   |     ^^^^^^^^^^^^^^
+...
+51 |     CoverageGap,
+   |     ^^^^^^^^^^^
+   |
+   = note: `TestFailureClass` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `output` is never read
+  --> src\verify.rs:75:9
+   |
+69 | pub struct VerifyResult {
+   |            ------------ field in this struct
+...
+75 |     pub output: String,
+   |         ^^^^^^
+   |
+   = note: `VerifyResult` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: `akar` (bin "akar" test) generated 15 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src\main.rs (C:\cargo-target\steroid-cli\debug\deps\akar-05df99a59b0fec67.exe)
+
+running 104 tests
+test config::tests::discover_akar_dir_is_child_of_project_root ... ok
+test config::tests::discover_global_dir_contains_akar ... ok
+test backup::tests::restore_backup_returns_err_for_missing_backup ... ok
+test config::tests::redact_leaves_short_hex_alone ... ok
+test config::tests::discover_returns_absolute_project_root ... ok
+test backup::tests::backup_file_returns_err_for_missing_source ... ok
+test config::tests::discover_project_name_is_nonempty ... ok
+test config::tests::redact_masks_bearer_token ... ok
+test config::tests::redact_masks_long_hex ... ok
+test config::tests::redact_preserves_non_secret_text ... ok
+test config::tests::redact_masks_sk_keys ... ok
+test backup::tests::find_latest_backup_returns_none_when_no_backups ... ok
+test config::tests::redact_masks_token_eq ... ok
+test config::tests::validate_reports_missing_akar_dir_when_absent ... ok
+test config::tests::validate_empty_when_all_dirs_exist ... ok
+test config::tests::validate_reports_missing_global_dir_when_absent ... ok
+test contract::tests::bugfix_has_micro_budget ... ok
+test contract::tests::classify_auth_prompt_is_security ... ok
+test contract::tests::classify_bugfix_prompt ... ok
+test backup::tests::find_latest_backup_returns_most_recent ... ok
+test context_pack::tests::build_pack_smoke ... ok
+test contract::tests::classify_frontend_prompt ... ok
+test contract::tests::classify_migration_prompt ... ok
+test contract::tests::default_autonomy_is_a5 ... ok
+test context_pack::tests::format_pack_returns_nonempty ... ok
+test contract::tests::classify_dependency_prompt ... ok
+test contract::tests::classify_refactor_prompt ... ok
+test contract::tests::classify_feature_prompt ... ok
+test contract::tests::default_cost_mode_is_balanced ... ok
+test context_pack::tests::nonexistent_file_not_included ... ok
+test backup::tests::backup_file_creates_bak_file ... ok
+test contract::tests::feature_has_medium_budget ... ok
+test contract::tests::format_contract_contains_key_fields ... ok
+test contract::tests::format_contract_is_nonempty ... ok
+test contract::tests::security_has_small_budget ... ok
+test contract::tests::migration_has_large_budget_with_migrations_allowed ... ok
+test contract::tests::stop_conditions_nonempty_for_all_types ... ok
+test design::tests::format_report_ok_when_no_issues ... ok
+test design::tests::format_report_shows_count_when_issues_present ... ok
+test backup::tests::restore_backup_writes_content_back ... ok
+test doctor::tests::run_checks_returns_issues_when_dirs_missing ... ok
+test doctor::tests::run_checks_returns_no_issues_when_dirs_exist ... ok
+test event_log::tests::test_json_escape_special_chars ... ok
+test event_log::tests::test_read_recent_missing_file ... ok
+test mission::tests::format_mission_report_shows_failed_when_state_failed ... ok
+test design::tests::missing_design_dna_produces_warning ... ok
+test event_log::tests::test_append_creates_file ... ok
+test event_log::tests::test_rotate_if_needed_no_op_below_threshold ... ok
+test mission::tests::format_mission_report_contains_expected_sections ... ok
+test design::tests::present_design_dna_produces_no_issues ... ok
+test mission::tests::run_mission_event_log_nonempty ... ok
+test design::tests::check_project_on_actual_root_returns_report ... ok
+test mission::tests::run_mission_has_context_pack ... ok
+test design::tests::check_project_no_frontend_files_means_no_frontend_warning ... ok
+test event_log::tests::test_append_is_append_only ... ok
+test event_log::tests::test_rotate_if_needed_triggers_at_threshold ... ok
+test mission::tests::run_mission_reaches_done_state ... ok
+test design::tests::format_report_is_nonempty ... ok
+test mission::tests::run_mission_produces_a_contract ... ok
+test event_log::tests::test_read_recent_returns_correct_lines ... ok
+test safety::tests::check_migration_destructive_no_rollback_is_rejected ... ok
+test safety::tests::check_migration_non_destructive_is_ok ... ok
+test safety::tests::check_migration_non_destructive_no_rollback_warns ... ok
+test safety::tests::check_secrets_clean_text_returns_empty ... ok
+test safety::tests::check_migration_destructive_with_rollback_is_warning ... ok
+test safety::tests::check_secrets_does_not_echo_values ... ok
+test safe_fix::tests::create_missing_dir_is_idempotent ... ok
+test safety::tests::check_secrets_finds_sk_prefix ... ok
+test safety::tests::check_secrets_finds_token_leak ... ok
+test safety::tests::classify_cargo_test_is_safe ... ok
+test mission::tests::security_prompt_gets_high_risk ... ok
+test safe_fix::tests::normalize_path_returns_ok ... ok
+test safe_fix::tests::create_missing_dir_makes_directory ... ok
+test safety::tests::classify_curl_pipe_bash_is_critical_and_blocked ... ok
+test safety::tests::classify_echo_token_is_critical_and_blocked ... ok
+test safety::tests::classify_force_push_is_critical_and_blocked ... ok
+test safety::tests::classify_rm_rf_is_high ... ok
+test safety::tests::classify_unknown_command_is_medium ... ok
+test safety::tests::classify_git_status_is_safe ... ok
+test safety::tests::classify_npm_install_is_high_not_blocked ... ok
+test safety::tests::govern_dependency_high_requires_approval ... ok
+test safety::tests::govern_dependency_critical_is_rejected ... ok
+test safety::tests::govern_dependency_safe_is_approved ... ok
+test safety::tests::govern_dependency_medium_is_approved ... ok
+test skill_registry::tests::check_kernel_priority_no_warnings_for_safe_names ... ok
+test skill_registry::tests::check_kernel_priority_warns_on_conflicting_names ... ok
+test skill_registry::tests::detect_duplicates_empty_purpose_ignored ... ok
+test safe_fix::tests::create_missing_template_errors_when_template_missing ... ok
+test skill_registry::tests::detect_duplicates_finds_matching_purposes ... ok
+test skill_registry::tests::format_registry_produces_nonempty_output ... ok
+test skill_registry::tests::format_registry_zero_skills ... ok
+test skill_registry::tests::scan_skills_on_nonexistent_dir_returns_empty ... ok
+test tests::version_constant_is_nonempty ... ok
+test tests::version_matches_cargo_pkg_version ... ok
+test skill_registry::tests::scan_skills_finds_commands_in_claude_dir ... ok
+test verify::tests::test_classify_failure_assertion_is_code_wrong ... ok
+test safe_fix::tests::create_missing_template_copies_file ... ok
+test verify::tests::test_classify_failure_default_is_code_wrong ... ok
+test verify::tests::test_classify_failure_no_such_file_is_environment_issue ... ok
+test verify::tests::test_classify_failure_timeout_is_flaky ... ok
+test verify::tests::test_detect_recipe_finds_cargo_toml ... ok
+test safe_fix::tests::create_missing_template_backs_up_existing_dest ... ok
+test verify::tests::test_format_results_shape ... ok
+test verify::tests::test_detect_recipe_manual_checks_always_present ... ok
+
+test result: ok. 104 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
