@@ -23,6 +23,20 @@ pub enum SkillStatus {
     Testing,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum SkillRole {
+    Kernel,
+    Methodology,
+    Execution,
+    Support,
+    Memory,
+    Design,
+    Security,
+    Dangerous,
+    LibraryOnly,
+}
+
 // ---------------------------------------------------------------------------
 // SkillEntry
 // ---------------------------------------------------------------------------
@@ -35,6 +49,84 @@ pub struct SkillEntry {
     pub risk: String,
     pub token_cost: String,
     pub status: SkillStatus,
+    pub role: SkillRole,
+}
+
+// ---------------------------------------------------------------------------
+// classify_role
+// ---------------------------------------------------------------------------
+
+/// Classify a skill's role by name patterns and source.
+pub fn classify_role(name: &str, source: &SkillSource) -> SkillRole {
+    let lower = name.to_lowercase();
+
+    if lower.contains("akar") || *source == SkillSource::Project {
+        return SkillRole::Kernel;
+    }
+    if lower.contains("superpower") || lower.contains("tdd") || lower.contains("plan") || lower.contains("brainstorm") {
+        return SkillRole::Methodology;
+    }
+    if lower.contains("gsd") || lower.contains("shit") || lower.contains("dispatch") || lower.contains("execute") {
+        return SkillRole::Execution;
+    }
+    if lower.contains("recall") || lower.contains("memory") || lower.contains("self-evolve") || lower.contains("checkpoint") {
+        return SkillRole::Memory;
+    }
+    if lower.contains("design") || lower.contains("taste") || lower.contains("visual") || lower.contains("ui") || lower.contains("frontend") {
+        return SkillRole::Design;
+    }
+    if lower.contains("security") || lower.contains("review") {
+        return SkillRole::Security;
+    }
+    if lower.contains("dangerous") || lower.contains("unsafe") {
+        return SkillRole::Dangerous;
+    }
+
+    SkillRole::Support
+}
+
+// ---------------------------------------------------------------------------
+// detect_skill_conflicts
+// ---------------------------------------------------------------------------
+
+/// Return warnings when skill combinations create conflicts.
+pub fn detect_skill_conflicts(skills: &[SkillEntry]) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    // More than one active Methodology skill is a conflict.
+    let active_methodology: Vec<&SkillEntry> = skills
+        .iter()
+        .filter(|s| s.role == SkillRole::Methodology && s.status == SkillStatus::Active)
+        .collect();
+    if active_methodology.len() > 1 {
+        let names: Vec<&str> = active_methodology.iter().map(|s| s.name.as_str()).collect();
+        warnings.push(format!(
+            "conflict: multiple active Methodology skills — {}",
+            names.join(", ")
+        ));
+    }
+
+    // Any active Dangerous skill is a conflict.
+    for s in skills {
+        if s.role == SkillRole::Dangerous && s.status == SkillStatus::Active {
+            warnings.push(format!(
+                "conflict: skill '{}' has role Dangerous and is Active",
+                s.name
+            ));
+        }
+    }
+
+    // Kernel skills that are not highest priority (source != Project) are a conflict.
+    for s in skills {
+        if s.role == SkillRole::Kernel && s.source != SkillSource::Project {
+            warnings.push(format!(
+                "conflict: kernel skill '{}' is not at highest priority (source={:?})",
+                s.name, s.source
+            ));
+        }
+    }
+
+    warnings
 }
 
 // ---------------------------------------------------------------------------
@@ -88,6 +180,7 @@ fn collect_skills(dir: &Path, out: &mut Vec<SkillEntry>) {
         };
 
         let purpose = read_first_line(&path);
+        let role = classify_role(&name, &source);
 
         out.push(SkillEntry {
             name,
@@ -96,6 +189,7 @@ fn collect_skills(dir: &Path, out: &mut Vec<SkillEntry>) {
             risk: "low".to_string(),
             token_cost: "low".to_string(),
             status: SkillStatus::Active,
+            role,
         });
     }
 }
@@ -190,7 +284,18 @@ pub fn format_registry(skills: &[SkillEntry]) -> String {
             SkillStatus::Replaced => "replaced",
             SkillStatus::Testing => "testing",
         };
-        out.push_str(&format!("  - {} ({}) [{}]\n", skill.name, source, status));
+        let role = match skill.role {
+            SkillRole::Kernel => "kernel",
+            SkillRole::Methodology => "methodology",
+            SkillRole::Execution => "execution",
+            SkillRole::Support => "support",
+            SkillRole::Memory => "memory",
+            SkillRole::Design => "design",
+            SkillRole::Security => "security",
+            SkillRole::Dangerous => "dangerous",
+            SkillRole::LibraryOnly => "library-only",
+        };
+        out.push_str(&format!("  - {} ({}) [{}] [{}]\n", skill.name, source, role, status));
     }
     out
 }
@@ -274,33 +379,25 @@ mod tests {
         assert!(skills.is_empty());
     }
 
+    fn make_skill(name: &str, source: SkillSource, purpose: &str, status: SkillStatus) -> SkillEntry {
+        let role = classify_role(name, &source);
+        SkillEntry {
+            name: name.to_string(),
+            source,
+            purpose: purpose.to_string(),
+            risk: "low".to_string(),
+            token_cost: "low".to_string(),
+            status,
+            role,
+        }
+    }
+
     #[test]
     fn detect_duplicates_finds_matching_purposes() {
         let skills = vec![
-            SkillEntry {
-                name: "alpha".to_string(),
-                source: SkillSource::Custom,
-                purpose: "do the thing".to_string(),
-                risk: "low".to_string(),
-                token_cost: "low".to_string(),
-                status: SkillStatus::Active,
-            },
-            SkillEntry {
-                name: "beta".to_string(),
-                source: SkillSource::Project,
-                purpose: "do the thing".to_string(),
-                risk: "low".to_string(),
-                token_cost: "low".to_string(),
-                status: SkillStatus::Active,
-            },
-            SkillEntry {
-                name: "gamma".to_string(),
-                source: SkillSource::Superpower,
-                purpose: "something else".to_string(),
-                risk: "low".to_string(),
-                token_cost: "low".to_string(),
-                status: SkillStatus::Active,
-            },
+            make_skill("alpha", SkillSource::Custom, "do the thing", SkillStatus::Active),
+            make_skill("beta", SkillSource::Project, "do the thing", SkillStatus::Active),
+            make_skill("gamma", SkillSource::Superpower, "something else", SkillStatus::Active),
         ];
 
         let dups = detect_duplicates(&skills);
@@ -311,22 +408,8 @@ mod tests {
     #[test]
     fn detect_duplicates_empty_purpose_ignored() {
         let skills = vec![
-            SkillEntry {
-                name: "a".to_string(),
-                source: SkillSource::Custom,
-                purpose: String::new(),
-                risk: "low".to_string(),
-                token_cost: "low".to_string(),
-                status: SkillStatus::Active,
-            },
-            SkillEntry {
-                name: "b".to_string(),
-                source: SkillSource::Custom,
-                purpose: String::new(),
-                risk: "low".to_string(),
-                token_cost: "low".to_string(),
-                status: SkillStatus::Active,
-            },
+            make_skill("a", SkillSource::Custom, "", SkillStatus::Active),
+            make_skill("b", SkillSource::Custom, "", SkillStatus::Active),
         ];
         let dups = detect_duplicates(&skills);
         assert!(dups.is_empty(), "empty purposes should not count as duplicates");
@@ -334,14 +417,7 @@ mod tests {
 
     #[test]
     fn format_registry_produces_nonempty_output() {
-        let skills = vec![SkillEntry {
-            name: "my-skill".to_string(),
-            source: SkillSource::Project,
-            purpose: "does stuff".to_string(),
-            risk: "low".to_string(),
-            token_cost: "low".to_string(),
-            status: SkillStatus::Active,
-        }];
+        let skills = vec![make_skill("my-skill", SkillSource::Project, "does stuff", SkillStatus::Active)];
         let out = format_registry(&skills);
         assert!(!out.is_empty());
         assert!(out.contains("my-skill"));
@@ -357,32 +433,75 @@ mod tests {
     }
 
     #[test]
+    fn format_registry_shows_role() {
+        let skills = vec![make_skill("superpower-foo", SkillSource::Superpower, "methodology skill", SkillStatus::Active)];
+        let out = format_registry(&skills);
+        assert!(out.contains("methodology"), "format_registry should show role");
+    }
+
+    #[test]
+    fn classify_role_kernel_by_name() {
+        assert_eq!(classify_role("akar-doctor", &SkillSource::Custom), SkillRole::Kernel);
+    }
+
+    #[test]
+    fn classify_role_kernel_by_source() {
+        assert_eq!(classify_role("anything", &SkillSource::Project), SkillRole::Kernel);
+    }
+
+    #[test]
+    fn classify_role_methodology() {
+        assert_eq!(classify_role("superpower-tdd", &SkillSource::Superpower), SkillRole::Methodology);
+        assert_eq!(classify_role("writing-plans", &SkillSource::Custom), SkillRole::Methodology);
+    }
+
+    #[test]
+    fn classify_role_memory() {
+        assert_eq!(classify_role("recall", &SkillSource::Custom), SkillRole::Memory);
+        assert_eq!(classify_role("memory-maintain", &SkillSource::Custom), SkillRole::Memory);
+    }
+
+    #[test]
+    fn classify_role_support_default() {
+        assert_eq!(classify_role("some-random-tool", &SkillSource::Custom), SkillRole::Support);
+    }
+
+    #[test]
+    fn detect_skill_conflicts_methodology_conflict() {
+        let skills = vec![
+            make_skill("superpower-foo", SkillSource::Superpower, "", SkillStatus::Active),
+            make_skill("plan-bar", SkillSource::Custom, "", SkillStatus::Active),
+        ];
+        let conflicts = detect_skill_conflicts(&skills);
+        assert!(!conflicts.is_empty(), "two active Methodology skills should conflict");
+    }
+
+    #[test]
+    fn detect_skill_conflicts_dangerous_active() {
+        let skills = vec![
+            make_skill("dangerous-tool", SkillSource::Custom, "", SkillStatus::Active),
+        ];
+        let conflicts = detect_skill_conflicts(&skills);
+        assert!(!conflicts.is_empty(), "active Dangerous skill should conflict");
+    }
+
+    #[test]
+    fn detect_skill_conflicts_no_conflict_clean() {
+        let skills = vec![
+            make_skill("superpower-foo", SkillSource::Superpower, "", SkillStatus::Active),
+            make_skill("recall", SkillSource::Custom, "", SkillStatus::Active),
+        ];
+        let conflicts = detect_skill_conflicts(&skills);
+        // One Methodology + one Memory — no conflict expected
+        assert!(conflicts.is_empty(), "no conflict expected, got: {:?}", conflicts);
+    }
+
+    #[test]
     fn check_kernel_priority_warns_on_conflicting_names() {
         let skills = vec![
-            SkillEntry {
-                name: "custom-doctor".to_string(),
-                source: SkillSource::Custom,
-                purpose: "health check".to_string(),
-                risk: "low".to_string(),
-                token_cost: "low".to_string(),
-                status: SkillStatus::Active,
-            },
-            SkillEntry {
-                name: "my-verify".to_string(),
-                source: SkillSource::Superpower,
-                purpose: "verify stuff".to_string(),
-                risk: "low".to_string(),
-                token_cost: "low".to_string(),
-                status: SkillStatus::Active,
-            },
-            SkillEntry {
-                name: "akar-mission".to_string(),
-                source: SkillSource::Project,
-                purpose: "run mission".to_string(),
-                risk: "low".to_string(),
-                token_cost: "low".to_string(),
-                status: SkillStatus::Active,
-            },
+            make_skill("custom-doctor", SkillSource::Custom, "health check", SkillStatus::Active),
+            make_skill("my-verify", SkillSource::Superpower, "verify stuff", SkillStatus::Active),
+            make_skill("akar-mission", SkillSource::Project, "run mission", SkillStatus::Active),
         ];
 
         let warnings = check_kernel_priority(&skills);
@@ -395,14 +514,7 @@ mod tests {
 
     #[test]
     fn check_kernel_priority_no_warnings_for_safe_names() {
-        let skills = vec![SkillEntry {
-            name: "deploy-helper".to_string(),
-            source: SkillSource::Custom,
-            purpose: "deploy stuff".to_string(),
-            risk: "low".to_string(),
-            token_cost: "low".to_string(),
-            status: SkillStatus::Active,
-        }];
+        let skills = vec![make_skill("deploy-helper", SkillSource::Custom, "deploy stuff", SkillStatus::Active)];
         let warnings = check_kernel_priority(&skills);
         assert!(warnings.is_empty());
     }

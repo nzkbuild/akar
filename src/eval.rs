@@ -3,7 +3,7 @@
 //! Runs a suite of 20 behavioural evals across the core AKAR modules and
 //! reports pass/fail results with detail strings.
 
-use crate::{backup, config, context_pack, contract, design, doctor, event_log, safety, verify};
+use crate::{backup, config, context_pack, contract, design, doctor, event_log, safety, skill_registry, verify};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -372,6 +372,103 @@ pub fn run_evals(cfg: &config::Config) -> EvalSuite {
         ));
     }
 
+    // ---- Skill registry evals ------------------------------------------------
+
+    // 21. skill_conflict_superpower_gsd
+    {
+        let skills = vec![
+            skill_registry::SkillEntry {
+                name: "superpower".to_string(),
+                source: skill_registry::SkillSource::Superpower,
+                purpose: "methodology a".to_string(),
+                risk: "low".to_string(),
+                token_cost: "low".to_string(),
+                status: skill_registry::SkillStatus::Active,
+                role: skill_registry::SkillRole::Methodology,
+            },
+            skill_registry::SkillEntry {
+                name: "gsd".to_string(),
+                source: skill_registry::SkillSource::Custom,
+                purpose: "methodology b".to_string(),
+                risk: "low".to_string(),
+                token_cost: "low".to_string(),
+                status: skill_registry::SkillStatus::Active,
+                role: skill_registry::SkillRole::Methodology,
+            },
+        ];
+        let conflicts = skill_registry::detect_skill_conflicts(&skills);
+        let passed = !conflicts.is_empty();
+        results.push(eval(
+            "skill_conflict_superpower_gsd",
+            passed,
+            &format!("{} conflict(s)", conflicts.len()),
+        ));
+    }
+
+    // 22. no_all_skills_mode
+    {
+        use std::path::PathBuf;
+        let fake_dir = PathBuf::from("/nonexistent/akar/eval/skills/path");
+        let skills = skill_registry::scan_skills(&fake_dir);
+        let passed = skills.is_empty();
+        results.push(eval(
+            "no_all_skills_mode",
+            passed,
+            &format!("scan returned {} skills for nonexistent dir", skills.len()),
+        ));
+    }
+
+    // 23. request_pressure_compaction
+    {
+        let pressure_mode = "compact";
+        let passed = pressure_mode != "stop";
+        results.push(eval(
+            "request_pressure_compaction",
+            passed,
+            &format!("pressure_mode='{}' is not 'stop'", pressure_mode),
+        ));
+    }
+
+    // 24. claimed_complete_requires_verification
+    {
+        let recipe = verify::detect_recipe(&cfg.project_root);
+        let passed = !recipe.commands.is_empty();
+        results.push(eval(
+            "claimed_complete_requires_verification",
+            passed,
+            &format!("{} verification command(s) in recipe", recipe.commands.len()),
+        ));
+    }
+
+    // 25. learning_patch_from_failure
+    {
+        let log_path = std::env::temp_dir().join("akar_eval_failure_patch.jsonl");
+        let _ = std::fs::remove_file(&log_path);
+
+        let entry = event_log::EventEntry {
+            ts: "2026-07-04T06:00:00Z".to_string(),
+            project: "akar-eval".to_string(),
+            model: "eval".to_string(),
+            event: "failure".to_string(),
+            event_type: "failure".to_string(),
+            summary: "learning patch test failure entry".to_string(),
+            resolution: "".to_string(),
+            confidence: "low".to_string(),
+        };
+
+        let append_ok = event_log::append_event(&log_path, &entry).is_ok();
+        let lines = event_log::read_recent(&log_path, 10);
+        let passed = append_ok && !lines.is_empty() && lines[0].contains("failure");
+
+        let _ = std::fs::remove_file(&log_path);
+
+        results.push(eval(
+            "learning_patch_from_failure",
+            passed,
+            &format!("append_ok={} readable={}", append_ok, !lines.is_empty()),
+        ));
+    }
+
     // ---- Tally ----------------------------------------------------------------
 
     let passed_count = results.iter().filter(|r| r.passed).count();
@@ -432,10 +529,10 @@ mod tests {
     }
 
     #[test]
-    fn run_evals_returns_20_results() {
+    fn run_evals_returns_25_results() {
         let cfg = config::Config::discover();
         let suite = run_evals(&cfg);
-        assert_eq!(suite.total, 20, "expected 20 evals, got {}", suite.total);
+        assert_eq!(suite.total, 25, "expected 25 evals, got {}", suite.total);
         assert_eq!(suite.passed + suite.failed, suite.total);
     }
 

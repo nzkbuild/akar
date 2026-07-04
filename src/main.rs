@@ -63,6 +63,8 @@ fn main() {
         }
         "skills" => cmd_skills(),
         "calibrate" => cmd_calibrate(),
+        "postmortem" => cmd_postmortem(),
+        "telemetry" => cmd_telemetry(),
         other => {
             eprintln!("akar: unknown command '{}'", other);
             eprintln!("Run 'akar --help' for usage.");
@@ -89,6 +91,8 @@ fn print_usage() {
     println!("  mission <prompt>  Run the full mission state machine for a prompt");
     println!("  skills            List registered skills and check for kernel conflicts");
     println!("  calibrate         Show model/gateway profile for the current session");
+    println!("  postmortem        Analyze mission failures and generate learning patches");
+    println!("  telemetry         Show compact operational metrics from EVENT_LOG.jsonl");
     println!();
     println!("FLAGS:");
     println!("  --version   Print version");
@@ -319,6 +323,18 @@ fn cmd_calibrate() {
     let mut profile = model_profile::default_profile(&model_id);
     profile.gateway = gateway;
     print!("{}", model_profile::format_profile(&profile));
+}
+
+fn cmd_postmortem() {
+    println!("postmortem: not yet implemented");
+    println!("  hint: postmortem analyzes mission failures and generates learning patches");
+    println!("  status: stub (v0.1.1 architecture refinement)");
+}
+
+fn cmd_telemetry() {
+    println!("telemetry: not yet implemented");
+    println!("  hint: telemetry shows compact operational metrics from EVENT_LOG.jsonl");
+    println!("  status: stub (v0.1.1 architecture refinement)");
 }
 
 #[cfg(test)]
