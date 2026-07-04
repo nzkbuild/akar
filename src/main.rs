@@ -18,6 +18,7 @@ mod safe_fix;
 mod safety;
 mod skill_registry;
 mod verify;
+mod workflow;
 
 use std::process;
 
@@ -71,6 +72,21 @@ fn main() {
         "postmortem" => cmd_postmortem(),
         "telemetry" => cmd_telemetry(),
         "learn" => cmd_learn(),
+        "run" => {
+            let prompt_args: Vec<&str> = args[2..].iter()
+                .take_while(|s| !s.starts_with("--"))
+                .map(|s| s.as_str())
+                .collect();
+            let used = parse_flag_u64(&args, "--used");
+            let limit = parse_flag_u64(&args, "--limit");
+            if prompt_args.is_empty() {
+                println!("akar run \"<task prompt>\"");
+                println!("  example: akar run \"fix the login button\"");
+                println!("  runs: doctor → preflight → mission → telemetry → postmortem");
+            } else {
+                cmd_run(&prompt_args.join(" "), used, limit);
+            }
+        }
         "preflight" => {
             let prompt_args: Vec<&str> = args[2..].iter()
                 .take_while(|s| !s.starts_with("--"))
@@ -120,6 +136,7 @@ fn print_usage() {
     println!("  postmortem        Analyze mission failures and generate learning patches");
     println!("  telemetry         Show compact operational metrics from EVENT_LOG.jsonl");
     println!("  learn             Generate a learning patch from latest postmortem evidence");
+    println!("  run <task>        Stable workflow: doctor → preflight → mission → postmortem");
     println!("  preflight <task>  Show mission strategy before executing a task");
     println!("  request           Show request pressure mode and strategy advisory");
     println!("  request --used N --limit M  Supply explicit request counts for pressure mode");
@@ -131,43 +148,66 @@ fn print_usage() {
 
 fn cmd_status() {
     let cfg = config::Config::discover();
-    let issues = cfg.validate();
+
+    // Doctor state
+    let issues = doctor::run_checks(&cfg);
+    let doctor_state = if issues.is_empty() { "OK" } else { "DEGRADED" };
+
+    // Bootstrap state
+    let bootstrap_state = if cfg.akar_dir.exists() { "OK" } else { "not bootstrapped" };
+
+    // Telemetry count
+    let log_path = cfg.akar_dir.join("EVENT_LOG.jsonl");
+    let telem_summary = event_log::summarize_log(&log_path, 1);
+    let telem_state = if telem_summary.exists {
+        format!("{} event(s)", telem_summary.total_events)
+    } else {
+        "none".to_string()
+    };
+
+    // Postmortem outcome
+    let pm = postmortem::run_postmortem(&log_path);
+    let pm_outcome = pm.latest_outcome.as_str();
+
+    // Skill conflicts (cheap — scan project only)
+    let project_commands = cfg.project_root.join(".claude").join("commands");
+    let skills = skill_registry::scan_skills(&project_commands);
+    let skill_report = skill_registry::build_skill_report(&skills);
+    let skill_state = if skill_report.conflicts.is_empty() {
+        "OK".to_string()
+    } else {
+        format!("{} conflict(s)", skill_report.conflicts.len())
+    };
+
+    // Request mode
+    let signals = request_intelligence::RequestSignals { used: None, limit: None, prompt: None };
+    let advisory = request_intelligence::build_advisory(&cfg, &signals);
+    let request_mode = advisory.mode.as_str();
 
     let health = if issues.is_empty() { "HEALTHY" } else { "DEGRADED" };
     println!("status: {}", health);
-    println!("  runtime:      akar {}", VERSION);
-    println!("  project:      {}", cfg.project_name);
-    println!("  project_root: {}", cfg.project_root.display());
-    println!(
-        "  akar_dir:     {} [{}]",
-        cfg.akar_dir.display(),
-        if cfg.akar_dir.exists() { "exists" } else { "missing" }
-    );
-    println!(
-        "  global_dir:   {} [{}]",
-        cfg.global_dir.display(),
-        if cfg.global_dir.exists() { "exists" } else { "missing" }
-    );
-
-    let pack = context_pack::build_pack(&cfg);
-    let hot_count = pack.files.iter().filter(|f| f.tier == context_pack::ContextTier::Hot).count();
-    println!("  hot_context: {} file(s)", hot_count);
-
-    let design_report = design::check_project(&cfg.project_root);
-    let design_line = if design_report.issues.is_empty() {
-        "OK".to_string()
-    } else {
-        format!("{} issue(s)", design_report.issues.len())
-    };
-    println!("  design:      {}", design_line);
-    println!("  ram_budget:  <{} MB target (no daemon, no local LLM)", RAM_BUDGET_MB);
+    println!("  runtime:    akar {}", VERSION);
+    println!("  project:    {}", cfg.project_name);
+    println!("  doctor:     {}", doctor_state);
+    println!("  bootstrap:  {}", bootstrap_state);
+    println!("  telemetry:  {}", telem_state);
+    println!("  postmortem: {}", pm_outcome);
+    println!("  skills:     {}", skill_state);
+    println!("  request:    {}", request_mode);
+    println!("  ram_budget: <{} MB target", RAM_BUDGET_MB);
 
     if !issues.is_empty() {
         println!("  issues:");
         for issue in &issues {
-            println!("    - {}", issue);
+            println!("    - {}", issue.message);
         }
     }
+}
+
+fn cmd_run(prompt: &str, used: Option<u64>, limit: Option<u64>) {
+    let cfg = config::Config::discover();
+    let report = workflow::run_workflow(prompt, &cfg, used, limit);
+    print!("{}", workflow::format_workflow_report(&report));
 }
 
 fn cmd_doctor(fix_mode: bool) {

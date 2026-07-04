@@ -3,7 +3,7 @@
 //! Runs a suite of 20 behavioural evals across the core AKAR modules and
 //! reports pass/fail results with detail strings.
 
-use crate::{backup, config, context_pack, contract, design, doctor, event_log, safety, skill_registry, verify};
+use crate::{backup, config, context_pack, contract, design, doctor, event_log, safety, skill_registry, verify, workflow};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -471,6 +471,43 @@ pub fn run_evals(cfg: &config::Config) -> EvalSuite {
         ));
     }
 
+    // ---- v0.2.0 stable runtime evals -----------------------------------------
+
+    // 26. stable_runtime_workflow
+    {
+        let r = workflow::run_workflow("fix the login button", cfg, None, None);
+        let passed = !r.mission_state.is_empty() && !r.preflight.recommendation.is_empty();
+        results.push(eval(
+            "stable_runtime_workflow",
+            passed,
+            &format!("mission={} preflight_ok={}", r.mission_state, !r.preflight.recommendation.is_empty()),
+        ));
+    }
+
+    // 27. high_risk_preflight_blocks_execution
+    {
+        let r = workflow::run_workflow("delete all auth tokens from production db", cfg, None, None);
+        let high_risk = r.preflight.risk == "High" || r.preflight.risk == "Critical";
+        let scaffold_only = r.mission_state.contains("Done") || r.mission_state.contains("scaffold") || r.mission_state.contains("skipped");
+        let passed = high_risk && scaffold_only;
+        results.push(eval(
+            "high_risk_preflight_blocks_execution",
+            passed,
+            &format!("risk={} mission={}", r.preflight.risk, r.mission_state),
+        ));
+    }
+
+    // 28. telemetry_postmortem_chain
+    {
+        let r = workflow::run_workflow("fix the login button", cfg, None, None);
+        let passed = !r.postmortem_outcome.is_empty();
+        results.push(eval(
+            "telemetry_postmortem_chain",
+            passed,
+            &format!("postmortem_outcome={}", r.postmortem_outcome),
+        ));
+    }
+
     // ---- Tally ----------------------------------------------------------------
 
     let passed_count = results.iter().filter(|r| r.passed).count();
@@ -531,10 +568,10 @@ mod tests {
     }
 
     #[test]
-    fn run_evals_returns_25_results() {
+    fn run_evals_returns_28_results() {
         let cfg = config::Config::discover();
         let suite = run_evals(&cfg);
-        assert_eq!(suite.total, 25, "expected 25 evals, got {}", suite.total);
+        assert_eq!(suite.total, 28, "expected 28 evals, got {}", suite.total);
         assert_eq!(suite.passed + suite.failed, suite.total);
     }
 
