@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.9.0 — 2026-07-05
+First Auto-Hook Evidence. PreToolUse hook fired automatically on every Bash tool call throughout the session. Safe commands (echo, cargo build, cargo test) logged ALLOW/exit 0. `rm -rf /` logged BLOCK/exit 2 — Claude Code blocked execution before rm ran. Hook was wired manually by user into ~/.claude/settings.json. AKAR did not modify Claude Code configuration. akar.exe must be on the subprocess PATH (C:\Users\nbzkr\bin\) for classification to run. Previous attempt failed because akar was not on subprocess PATH — documented honestly. Evidence in docs/audits/AKAR_V0_9_AUTO_HOOK_EVIDENCE.md. No runtime behavior changed. 251 tests passing.
+
+## v0.8.2 — 2026-07-05
+Hook Evidence Logging. Both hook templates now append one JSONL event to `.akar/HOOK_EVENTS.jsonl` per call: timestamp, hook, tool_name, command_preview (truncated 300 chars, secrets redacted), decision (ALLOW/WARN/BLOCK/SKIP), exit_code. Creates `.akar/` if missing. Does not log full stdin JSON blob. Added `.akar/HOOK_EVENTS.jsonl` to `.gitignore`. Updated `akar hooks --check` to verify templates read stdin, write to HOOK_EVENTS.jsonl, and use exit 2. Added 4 new Rust tests. Exit behavior unchanged: non-Bash→exit 0, safe→exit 0, BLOCKED→exit 2. AKAR does not send hook telemetry anywhere. 251 tests passing.
+
+## v0.8.1 — 2026-07-05
+Hook JSON Compatibility. Fixed both hook templates to read Claude Code PreToolUse JSON from stdin (not $1/argv). Templates now extract tool_name and tool_input.command, skip non-Bash tools immediately, pass only the command string to `akar safety`, and exit 2 (not exit 1) for BLOCKED commands — exit 1 does not block in Claude Code. Added Rust hook JSON parsing module (parse_hook_event, hook_decision) with 12 new tests covering: JSON parsing, Skip/Check/Allow decisions, safety integration for cargo test and rm -rf /, exit-2 enforcement, and stdin reading. Updated format_hooks_install snippet to show correct PreToolUse/matcher/Bash shape. 247 tests passing.
+
+## v0.8.0 — 2026-07-05
+First Verified Baseline Loop. Proved the full AKAR loop on a real clean session: committed all v0.7.1 work, confirmed readiness READY, ran `akar preflight --snapshot "fix one small documentation typo"`, corrected stale version string in `docs/INSTALL.md` (1 file, 2 LOC), ran `akar safety "cargo test"` (Safe/allowed), ran `akar postmortem --diff --baseline` — verdict PASS (1 file / 2 LOC against budget of 3 files / 60 LOC). Added `docs/audits/AKAR_V0_8_FIRST_BASELINE_LOOP_REPORT.md`. No runtime behavior changed. 235 tests passing.
+
 ## v0.7.1 — 2026-07-05
 Full Loop Readiness. Corrected v0.7.0 overclaim: report now states partial session evidence, not full verified loop. Added baseline loop readiness section to `akar status`: reports git repo detected, working tree clean, baseline file present, and readiness (READY/BLOCKED/UNKNOWN). Uses read-only git commands only. Full clean-baseline proof remains the next milestone. Docs updated with full baseline loop readiness instructions.
 

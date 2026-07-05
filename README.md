@@ -71,6 +71,14 @@ AKAR does not clean, stash, commit, reset, or revert for you.
 
 AKAR is developed using loop engineering: small scoped AI-assisted iterations with human audit, verification, and architecture freeze. Each release proves one thing. No release bumps the version until build and tests pass and the diff has been reviewed.
 
+v0.9.0 contains first auto-hook evidence: PreToolUse hook fired automatically, safe commands ALLOW'd, `rm -rf /` BLOCK'd with exit 2 before execution.
+
+v0.8.2 adds local hook evidence logging: hook events are written to `.akar/HOOK_EVENTS.jsonl` for audit. Gitignored. AKAR does not send hook telemetry anywhere.
+
+v0.8.1 fixes hook templates to correctly parse Claude Code PreToolUse JSON from stdin and use exit 2 (not exit 1) to block — exit 1 does not block in Claude Code.
+
+v0.8.0 contains the first clean-baseline loop report: commit → snapshot → scoped change → postmortem --baseline → PASS.
+
 v0.7.0 captured partial session evidence: dirty-tree refusal, safety blocking, and advisory-only behavior were verified; the full clean-baseline loop remains unverified.
 
 ---

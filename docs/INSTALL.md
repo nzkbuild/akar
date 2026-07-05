@@ -42,7 +42,7 @@ sudo cp target/release/akar /usr/local/bin/akar
 akar --version
 ```
 
-Expected: `akar 0.3.0`
+Expected: `akar 0.7.1`
 
 ### Update
 
