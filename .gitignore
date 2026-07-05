@@ -7,6 +7,7 @@
 .akar/NEXT_RUN.md
 .akar/DIFF_BASELINE.json
 .akar/HOOK_EVENTS.jsonl
+.akar/HOOK_EVENTS.*.jsonl
 .akar/*.bak
 
 # Test output artifacts
