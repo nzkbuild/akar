@@ -4,6 +4,12 @@ use std::time::{Duration, SystemTime};
 use crate::config;
 
 // ---------------------------------------------------------------------------
+// Note: context_pack builds a file/path tier list only.
+// It does NOT read file contents. It checks existence and mtime, then
+// returns paths for display purposes. Content reading is not implemented.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 

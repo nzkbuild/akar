@@ -93,11 +93,13 @@ pub fn build_advisory(cfg: &config::Config, signals: &RequestSignals) -> Request
 
 fn determine_mode(
     signals: &RequestSignals,
-    event_count: usize,
-    outcome: &postmortem::Outcome,
-    has_failures: bool,
+    _event_count: usize,
+    _outcome: &postmortem::Outcome,
+    _has_failures: bool,
 ) -> PressureMode {
-    // Explicit usage ratio takes priority when supplied.
+    // Pressure mode is only meaningful with explicit usage counts.
+    // Event-count inference has been removed — it produced arbitrary results
+    // with no grounding in real API usage data.
     if let (Some(used), Some(limit)) = (signals.used, signals.limit) {
         if limit == 0 {
             return PressureMode::Normal;
@@ -107,24 +109,6 @@ fn determine_mode(
         if ratio >= 0.85 { return PressureMode::Boundary; }
         if ratio >= 0.70 { return PressureMode::Compact; }
         if ratio >= 0.50 { return PressureMode::Saver; }
-        return PressureMode::Normal;
-    }
-
-    // Local signals only.
-    if matches!(outcome, postmortem::Outcome::Failed) && has_failures {
-        return PressureMode::Boundary;
-    }
-    if matches!(outcome, postmortem::Outcome::Failed) {
-        return PressureMode::Compact;
-    }
-    if matches!(outcome, postmortem::Outcome::Degraded) {
-        return PressureMode::Saver;
-    }
-    if event_count > 50 {
-        return PressureMode::Compact;
-    }
-    if event_count > 20 {
-        return PressureMode::Saver;
     }
     PressureMode::Normal
 }
@@ -274,6 +258,15 @@ mod tests {
             global_dir: std::path::PathBuf::from("/nonexistent/__akar_ri_global__"),
             project_name: "test".to_string(),
         }
+    }
+
+    #[test]
+    fn normal_mode_when_no_signals() {
+        let cfg = clean_cfg();
+        let signals = RequestSignals::empty();
+        let advisory = build_advisory(&cfg, &signals);
+        assert_eq!(advisory.mode, PressureMode::Normal);
+        assert!(!advisory.strategy.is_empty());
     }
 
     #[test]

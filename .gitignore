@@ -1,7 +1,12 @@
 /target
 
-# AKAR project-local runtime state — bootstrap recreates these
-.akar/
+# AKAR runtime-generated files — bootstrap recreates these, do not commit
+.akar/EVENT_LOG.jsonl
+.akar/SKILL_INVENTORY.md
+.akar/LEARNING_PATCHES.md
+.akar/NEXT_RUN.md
+.akar/DIFF_BASELINE.json
+.akar/*.bak
 
 # Test output artifacts
 test_output*.txt

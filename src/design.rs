@@ -32,11 +32,7 @@ pub struct DesignReport {
 
 /// Walk `project_root` and produce a `DesignReport`.
 ///
-/// Checks performed (in order):
-/// 1. `.akar/DESIGN_DNA.md` exists → warning if absent.
-/// 2. Any `.css` / `.scss` / `.tailwind` file present without design DNA →
-///    warning (frontend files detected without design guidance).
-/// 3. `index.html` present without design DNA → info.
+/// Check: `.akar/DESIGN_DNA.md` exists → warning if absent.
 pub fn check_project(project_root: &Path) -> DesignReport {
     let design_dna_path = project_root.join(".akar").join("DESIGN_DNA.md");
     let has_design_dna = design_dna_path.exists();
@@ -49,28 +45,6 @@ pub fn check_project(project_root: &Path) -> DesignReport {
             check: "design_dna_missing".to_string(),
             message: "no DESIGN_DNA.md found in .akar/".to_string(),
         });
-    }
-
-    // Scan for frontend files only when design DNA is absent — if it's present
-    // there is nothing to warn about.
-    if !has_design_dna {
-        let has_frontend = has_files_with_extensions(project_root, &["css", "scss", "tailwind"]);
-        if has_frontend {
-            issues.push(DesignIssue {
-                severity: "warning".to_string(),
-                check: "frontend_without_design_dna".to_string(),
-                message: "frontend files detected without design DNA".to_string(),
-            });
-        }
-
-        let index_html = project_root.join("index.html");
-        if index_html.exists() {
-            issues.push(DesignIssue {
-                severity: "info".to_string(),
-                check: "html_without_design_dna".to_string(),
-                message: "HTML file found, design module recommended".to_string(),
-            });
-        }
     }
 
     DesignReport { issues, has_design_dna }
@@ -102,44 +76,6 @@ pub fn format_design_report(report: &DesignReport) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Return true if any file under `root` (recursively) has one of the given
-/// extensions. Silently skips directories / entries that cannot be read.
-fn has_files_with_extensions(root: &Path, extensions: &[&str]) -> bool {
-    walk_has_extension(root, extensions)
-}
-
-fn walk_has_extension(dir: &Path, extensions: &[&str]) -> bool {
-    let rd = match std::fs::read_dir(dir) {
-        Ok(rd) => rd,
-        Err(_) => return false,
-    };
-    for entry in rd.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            // Skip hidden dirs and common non-source dirs to keep it fast.
-            let name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
-            if name.starts_with('.') || name == "node_modules" || name == "target" {
-                continue;
-            }
-            if walk_has_extension(&path, extensions) {
-                return true;
-            }
-        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            if extensions.contains(&ext) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -158,36 +94,16 @@ mod tests {
 
     #[test]
     fn check_project_on_actual_root_returns_report() {
-        // The AKAR project has no .akar/ at runtime (it's a Rust CLI project,
-        // not a deployed AKAR workspace), so we mainly verify the function
-        // runs without panicking and returns a coherent report.
         let root = project_root();
         let report = check_project(&root);
-        // has_design_dna reflects whether .akar/DESIGN_DNA.md exists on disk.
-        // Either outcome is valid; we just assert the struct is well-formed.
         let _ = report.has_design_dna;
-        // Issues must be a Vec (possibly empty).
         let _ = &report.issues;
-    }
-
-    #[test]
-    fn check_project_no_frontend_files_means_no_frontend_warning() {
-        // AKAR source tree has no .css/.scss/.tailwind files, so even if
-        // DESIGN_DNA.md is absent the frontend warning should NOT fire.
-        let root = project_root();
-        let report = check_project(&root);
-        let has_frontend_warn = report.issues.iter().any(|i| i.check == "frontend_without_design_dna");
-        assert!(
-            !has_frontend_warn,
-            "no frontend files in this project, but frontend warning fired"
-        );
     }
 
     // -- missing DESIGN_DNA warning ------------------------------------------
 
     #[test]
     fn missing_design_dna_produces_warning() {
-        // Point check_project at a temp dir that has no .akar/ subdirectory.
         let tmp = std::env::temp_dir().join("akar_design_test_missing_dna");
         let _ = std::fs::create_dir_all(&tmp);
 
@@ -202,7 +118,6 @@ mod tests {
             report.issues
         );
 
-        // Cleanup (best-effort).
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

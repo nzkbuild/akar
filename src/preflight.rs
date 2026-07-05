@@ -50,12 +50,10 @@ pub fn run_preflight(
     let advisory = request_intelligence::build_advisory(cfg, &signals);
     let request_mode = advisory.mode.as_str().to_string();
 
-    // 3. Skill intelligence — read-only scan, recommend conservatively
-    let claude_dir = cfg.global_dir
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| config::home_dir().join(".claude"));
-    let skills = skill_registry::scan_multi(&claude_dir, &cfg.project_root);
+    // 3. Skill intelligence — scan project-local skills only to avoid noise
+    // from all 200+ global skills. Full scan remains available via akar skills.
+    let project_commands = cfg.project_root.join(".claude").join("commands");
+    let skills = skill_registry::scan_skills(&project_commands);
     let skill_report = skill_registry::build_skill_report(&skills);
     let skill_recommendation = skill_recommendation_for_task(&tc, &skill_report);
 

@@ -1,6 +1,8 @@
 mod backup;
 mod bootstrap;
-mod circuit_breaker;
+mod diff_budget;
+mod hooks;
+mod init;
 mod config;
 mod context_pack;
 mod contract;
@@ -46,13 +48,22 @@ fn main() {
             let fix_mode = args.get(2).map(|s| s.as_str()) == Some("--fix");
             cmd_doctor(fix_mode);
         }
+        "init" => {
+            let skip = args.iter().any(|a| a == "--skip");
+            let claude = args.iter().any(|a| a == "--claude");
+            cmd_init(skip, claude);
+        }
         "bootstrap" => cmd_bootstrap(),
         "verify" => cmd_verify(),
         "eval" => {
             let prompt = args.get(2).map(|s| s.as_str());
             cmd_eval(prompt);
         }
-        "hooks" => cmd_hooks(),
+        "hooks" => {
+            let check = args.iter().any(|a| a == "--check");
+            let install = args.iter().any(|a| a == "--install");
+            cmd_hooks(check, install);
+        }
         "safety" => {
             let command = args.get(2).map(|s| s.as_str());
             cmd_safety(command);
@@ -69,7 +80,12 @@ fn main() {
         }
         "skills" => cmd_skills(),
         "calibrate" => cmd_calibrate(),
-        "postmortem" => cmd_postmortem(),
+        "postmortem" => {
+            let diff_mode = args.iter().any(|a| a == "--diff");
+            let baseline_mode = args.iter().any(|a| a == "--baseline");
+            let task_name = parse_flag_str(&args, "--task");
+            cmd_postmortem(diff_mode, baseline_mode, task_name);
+        }
         "telemetry" => cmd_telemetry(),
         "learn" => cmd_learn(),
         "run" => {
@@ -88,17 +104,19 @@ fn main() {
             }
         }
         "preflight" => {
+            let snapshot = args.iter().any(|a| a == "--snapshot");
             let prompt_args: Vec<&str> = args[2..].iter()
-                .take_while(|s| !s.starts_with("--"))
+                .filter(|s| !s.starts_with("--"))
                 .map(|s| s.as_str())
                 .collect();
             let used = parse_flag_u64(&args, "--used");
             let limit = parse_flag_u64(&args, "--limit");
             if prompt_args.is_empty() {
                 println!("akar preflight \"<task prompt>\"");
+                println!("  akar preflight --snapshot \"<task>\"  — write diff baseline before session");
                 println!("  example: akar preflight \"fix the login button\"");
             } else {
-                cmd_preflight(&prompt_args.join(" "), used, limit);
+                cmd_preflight(&prompt_args.join(" "), used, limit, snapshot);
             }
         }
         "request" => {
@@ -122,6 +140,8 @@ fn print_usage() {
     println!("  akar <command>");
     println!();
     println!("COMMANDS:");
+    println!("  init            First-run onboarding: bootstrap + doctor + next-steps guide");
+    println!("  init --claude   Include Claude Code integration instructions");
     println!("  status      Show runtime health and current session state");
     println!("  doctor      Read-only health check of AKAR and project config");
     println!("  doctor --fix  Apply safe fixes for detected issues (backs up before overwriting)");
@@ -144,6 +164,11 @@ fn print_usage() {
     println!("FLAGS:");
     println!("  --version   Print version");
     println!("  --help      Print this help");
+}
+
+fn cmd_init(skip: bool, claude_integration: bool) {
+    let result = init::run_init(skip, claude_integration);
+    print!("{}", init::format_init_report(&result));
 }
 
 fn cmd_status() {
@@ -184,6 +209,9 @@ fn cmd_status() {
     let advisory = request_intelligence::build_advisory(&cfg, &signals);
     let request_mode = advisory.mode.as_str();
 
+    // Baseline loop readiness (read-only git check)
+    let readiness = diff_budget::check_loop_readiness(&cfg.project_root, &cfg.akar_dir);
+
     let health = if issues.is_empty() { "HEALTHY" } else { "DEGRADED" };
     println!("status: {}", health);
     println!("  runtime:    akar {}", VERSION);
@@ -195,6 +223,8 @@ fn cmd_status() {
     println!("  skills:     {}", skill_state);
     println!("  request:    {}", request_mode);
     println!("  ram_budget: <{} MB target", RAM_BUDGET_MB);
+    println!();
+    print!("{}", diff_budget::format_loop_readiness(&readiness));
 
     if !issues.is_empty() {
         println!("  issues:");
@@ -356,12 +386,47 @@ fn cmd_safety(command: Option<&str>) {
     }
 }
 
-fn cmd_hooks() {
-    println!("akar hooks:");
-    println!("  bash hook:        hooks/pre-commit-akar.sh");
-    println!("  powershell hook:  hooks/pre-commit-akar.ps1");
-    println!("  settings example: .claude/settings.akar.json.example");
-    println!("  install: merge hooks into your .git/hooks/ and settings into ~/.claude/settings.json");
+fn cmd_hooks(check: bool, install: bool) {
+    let cfg = config::Config::discover();
+
+    if check {
+        let result = hooks::check_hooks(&cfg);
+        print!("{}", hooks::format_hooks_check(&result));
+        if !result.all_valid {
+            process::exit(1);
+        }
+        return;
+    }
+
+    if install {
+        let dest = cfg.akar_dir.join("hooks");
+        println!("hooks install:");
+        println!("  This will copy hook templates into: {}", dest.display());
+        println!("  Files: pre-tool-call.sh, pre-tool-call.ps1");
+        println!("  Existing files will be backed up before overwrite.");
+        println!("  AKAR will NOT modify ~/.claude/settings.json.");
+        println!("  You must connect these hooks to Claude Code manually.");
+        println!();
+        println!("  Type INSTALL to confirm, or anything else to cancel:");
+
+        let mut input = String::new();
+        let _ = std::io::stdin().read_line(&mut input);
+        let confirmed = input.trim() == "INSTALL";
+
+        if !confirmed {
+            println!("  cancelled — no changes made");
+            return;
+        }
+
+        let result = hooks::install_hooks(&cfg, true);
+        print!("{}", hooks::format_hooks_install(&result));
+        if result.cancelled {
+            process::exit(1);
+        }
+        return;
+    }
+
+    print!("{}", hooks::format_hooks_help());
 }
 
 fn cmd_skills() {
@@ -394,11 +459,152 @@ fn cmd_calibrate() {
     print!("{}", model_profile::format_profile(&profile));
 }
 
-fn cmd_postmortem() {
+fn cmd_postmortem(diff_mode: bool, baseline_mode: bool, task_name: Option<String>) {
     let cfg = config::Config::discover();
     let log_path = cfg.akar_dir.join("EVENT_LOG.jsonl");
     let report = postmortem::run_postmortem(&log_path);
     print!("{}", postmortem::format_postmortem_report(&report));
+
+    if !diff_mode {
+        return;
+    }
+
+    // --baseline mode: use saved baseline commit and budget.
+    if baseline_mode {
+        let baseline = match diff_budget::read_baseline(&cfg.akar_dir) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("postmortem --diff --baseline: {}", e);
+                process::exit(1);
+            }
+        };
+
+        println!("postmortem --diff --baseline:");
+        println!("  baseline timestamp: {}", baseline.timestamp);
+        println!("  baseline task:      {}", baseline.task_type);
+        println!("  baseline head:      {}", baseline.head_commit);
+        println!("  baseline budget:    {} files, {} LOC", baseline.budget_files_max, baseline.budget_loc_max);
+
+        let measurement = diff_budget::measure_diff_from_commit(
+            &cfg.project_root,
+            &baseline.head_commit,
+        );
+        let verdict = diff_budget::compare_budget(
+            &measurement,
+            baseline.budget_files_max,
+            baseline.budget_loc_max,
+        );
+
+        let diff_report = diff_budget::DiffReport {
+            measurement: measurement.clone(),
+            verdict: verdict.clone(),
+            budget_files_max: baseline.budget_files_max,
+            budget_loc_max: baseline.budget_loc_max,
+            task_type: baseline.task_type.clone(),
+        };
+        print!("{}", diff_budget::format_diff_report(&diff_report));
+
+        if matches!(verdict, diff_budget::BudgetVerdict::Exceeded { .. }) && cfg.akar_dir.exists() {
+            write_diff_learning_patch(
+                &cfg,
+                &measurement,
+                &verdict,
+                baseline.budget_files_max,
+                baseline.budget_loc_max,
+                &baseline.task_type,
+            );
+        }
+        return;
+    }
+
+    // Resolve task budget.
+    let (files_max, loc_max, canonical_name, is_default) = match task_name.as_deref() {
+        None => (3usize, 60usize, "Bugfix", true),
+        Some(t) => match diff_budget::budget_for_task_name(t) {
+            Ok((f, l, name)) => (f, l, name, false),
+            Err(e) => {
+                eprintln!("postmortem --diff: {}", e);
+                process::exit(1);
+            }
+        },
+    };
+
+    if is_default {
+        println!("postmortem --diff: using Bugfix budget by default");
+        println!("  hint: use --task <type> for a different budget");
+        println!("  valid: bugfix, feature, refactor, security, migration, dependency, frontend, docs, test, config");
+    }
+
+    let measurement = diff_budget::measure_diff(&cfg.project_root);
+    let verdict = diff_budget::compare_budget(&measurement, files_max, loc_max);
+
+    let task_label = if is_default {
+        format!("{} (default)", canonical_name)
+    } else {
+        canonical_name.to_string()
+    };
+
+    let diff_report = diff_budget::DiffReport {
+        measurement: measurement.clone(),
+        verdict: verdict.clone(),
+        budget_files_max: files_max,
+        budget_loc_max: loc_max,
+        task_type: task_label,
+    };
+    print!("{}", diff_budget::format_diff_report(&diff_report));
+
+    // Append learning patch when budget exceeded.
+    if matches!(verdict, diff_budget::BudgetVerdict::Exceeded { .. }) && cfg.akar_dir.exists() {
+        write_diff_learning_patch(&cfg, &measurement, &verdict, files_max, loc_max, canonical_name);
+    }
+}
+
+fn write_diff_learning_patch(
+    cfg: &config::Config,
+    measurement: &diff_budget::DiffMeasurement,
+    verdict: &diff_budget::BudgetVerdict,
+    files_max: usize,
+    loc_max: usize,
+    task: &str,
+) {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+
+    let patch_path = cfg.akar_dir.join("LEARNING_PATCHES.md");
+    let ts = event_log::now_iso8601();
+    let reason = if let diff_budget::BudgetVerdict::Exceeded { reason } = verdict {
+        reason.clone()
+    } else {
+        String::new()
+    };
+    let patch = format!(
+        "\n## LP-DIFF-{ts}\n\
+        - date: {ts}\n\
+        - source: postmortem --diff\n\
+        - project: {project}\n\
+        - task: {task}\n\
+        - budget: {bf} files, {bl} LOC\n\
+        - actual: {af} files, {al} total changed LOC\n\
+        - exceeded: {reason}\n\
+        - rule: Next prompt must reduce scope or split the task.\n\
+        - status: proposed\n",
+        ts = ts,
+        project = cfg.project_name,
+        task = task,
+        bf = files_max,
+        bl = loc_max,
+        af = measurement.file_count,
+        al = measurement.total_changed_lines,
+        reason = reason,
+    );
+    let needs_header = !patch_path.exists();
+    if let Ok(mut f) = OpenOptions::new().append(true).create(true).open(&patch_path) {
+        if needs_header {
+            let _ = write!(f, "# AKAR Learning Patches\n<!-- Append-only. -->\n");
+        }
+        let _ = write!(f, "{}", patch);
+        println!("  learning patch written: {}", patch_path.display());
+    }
 }
 
 fn cmd_learn() {
@@ -407,10 +613,66 @@ fn cmd_learn() {
     print!("{}", learn::format_learn_result(&result));
 }
 
-fn cmd_preflight(prompt: &str, used: Option<u64>, limit: Option<u64>) {
+fn cmd_preflight(prompt: &str, used: Option<u64>, limit: Option<u64>, snapshot: bool) {
     let cfg = config::Config::discover();
     let report = preflight::run_preflight(prompt, &cfg, used, limit);
     print!("{}", preflight::format_preflight_report(&report));
+
+    if snapshot {
+        // Refuse to write baseline if working tree is dirty.
+        match diff_budget::is_working_tree_clean(&cfg.project_root) {
+            Err(e) => {
+                eprintln!("preflight --snapshot: {}", e);
+                process::exit(1);
+            }
+            Ok(false) => {
+                eprintln!("preflight --snapshot: working tree is dirty");
+                eprintln!("  AKAR needs a clean baseline to measure session work.");
+                eprintln!("  Commit or stash changes first, then run preflight --snapshot.");
+                process::exit(1);
+            }
+            Ok(true) => {}
+        }
+
+        let head = match diff_budget::get_head_commit(&cfg.project_root) {
+            Ok(h) => h,
+            Err(e) => {
+                eprintln!("preflight --snapshot: {}", e);
+                process::exit(1);
+            }
+        };
+
+        // Parse budget from contract classification.
+        let tc = contract::classify_prompt(prompt);
+        let baseline = diff_budget::DiffBaseline {
+            timestamp: event_log::now_iso8601(),
+            prompt: config::redact(&prompt.chars().take(200).collect::<String>()),
+            head_commit: head.clone(),
+            task_type: format!("{:?}", tc.task_type),
+            budget_files_max: tc.diff_budget.files_max,
+            budget_loc_max: tc.diff_budget.loc_max,
+        };
+
+        if !cfg.akar_dir.exists() {
+            eprintln!("preflight --snapshot: .akar/ not found — run 'akar bootstrap' first");
+            process::exit(1);
+        }
+
+        match diff_budget::write_baseline(&cfg.akar_dir, &baseline) {
+            Ok(()) => {
+                println!("snapshot: baseline written");
+                println!("  head:   {}", head);
+                println!("  task:   {}", baseline.task_type);
+                println!("  budget: {} files, {} LOC", baseline.budget_files_max, baseline.budget_loc_max);
+                println!("  file:   {}", cfg.akar_dir.join("DIFF_BASELINE.json").display());
+                println!("  next:   run your Claude Code session, then 'akar postmortem --diff --baseline'");
+            }
+            Err(e) => {
+                eprintln!("preflight --snapshot: {}", e);
+                process::exit(1);
+            }
+        }
+    }
 }
 
 fn cmd_request(used: Option<u64>, limit: Option<u64>, prompt: Option<String>) {

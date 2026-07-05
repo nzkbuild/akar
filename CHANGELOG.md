@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.7.1 — 2026-07-05
+Full Loop Readiness. Corrected v0.7.0 overclaim: report now states partial session evidence, not full verified loop. Added baseline loop readiness section to `akar status`: reports git repo detected, working tree clean, baseline file present, and readiness (READY/BLOCKED/UNKNOWN). Uses read-only git commands only. Full clean-baseline proof remains the next milestone. Docs updated with full baseline loop readiness instructions.
+
+## v0.7.0 — 2026-07-05
+Verified Session Report. Added `docs/audits/AKAR_V0_7_VERIFIED_SESSION_REPORT.md` documenting a real end-to-end AKAR loop attempt with honest findings: snapshot refusal on dirty tree works, safety gate blocks rm -rf /, diff measurement reports EXCEEDED correctly, 229 tests pass, 28/28 evals pass. Full baseline loop was not run (session built the feature itself). Hook was manually invoked, not auto-installed. AKAR stayed advisory-only throughout. No runtime behavior changed. 229 tests passing.
+
+## v0.6.2 — 2026-07-05
+Diff Baseline Snapshot. Added `akar preflight --snapshot "<task>"`: checks working tree is clean, reads HEAD commit, writes `.akar/DIFF_BASELINE.json` with timestamp, prompt, HEAD, task type, and diff budget. Added `akar postmortem --diff --baseline`: reads saved baseline, measures diff from baseline HEAD to current working tree, compares against saved budget, prints PASS/EXCEEDED/UNKNOWN, appends learning patch on EXCEEDED. Added `DIFF_BASELINE.json` to `.gitignore`. Refactored learning patch writing into shared helper. 229 tests passing.
+
+## v0.6.1 — 2026-07-05
+Explicit diff budget selection. Added `--task <type>` argument to `akar postmortem --diff`. Supported types: bugfix, feature, refactor, security, migration, dependency, frontend, docs, test, config, unknown (with aliases). Default remains Bugfix with explicit hint. Invalid task exits non-zero with valid options listed. Learning note includes task type and full rule: "Next prompt must reduce scope or split the task." Uses existing contract.rs budget tiers — no second budget table. Updated README. 221 tests passing.
+
+## v0.6.0 — 2026-07-05
+Diff Budget Measurement. Added `src/diff_budget.rs`: measures actual git working tree diff using `git diff HEAD --numstat` and `--name-only`, parses file count and LOC, compares against preflight diff budget. Added `akar postmortem --diff`: prints measured files/LOC vs budget, reports PASS/EXCEEDED/UNKNOWN. Appends learning patch to `.akar/LEARNING_PATCHES.md` when EXCEEDED (rule: "Next prompt must reduce scope or split the task"). Does not enforce, block, or revert changes. Updated README and docs. 213 tests passing.
+
+## v0.5.2 — 2026-07-05
+Loop Engineering Doctrine. Added `docs/architecture/AKAR_LOOP_ENGINEERING.md` defining the development loop: freeze current truth, choose one narrow release target, write deterministic instructions, require verification, audit diffs, record baseline, generate next prompt from evidence. Documents Prompt Rules, Release Loop, and Human Audit sections. Added loop engineering paragraph to README. No runtime behavior changed. 203 tests passing.
+
+## v0.5.1 — 2026-07-05
+Safety gate fix. Classified destructive filesystem wipe commands as BLOCKED: `rm -rf /`, `rm -rf /*`, `sudo rm -rf /`, `sudo rm -rf /*`, `rm -fr /`, `rm -fr /*`, `del /s /q C:\`, `Remove-Item -Recurse -Force C:\`, `Remove-Item -Recurse -Force /`. Normal dev commands (cargo, git, npm) unaffected. Added 10 new safety tests. 203 tests passing.
+
+## v0.5.0 — 2026-07-05
+Real hook integration. Added `templates/hooks/pre-tool-call.sh` and `templates/hooks/pre-tool-call.ps1` — both call `akar safety` and exit non-zero only for BLOCKED commands. Added `hooks.rs` module with `--check` (verifies templates exist and contain `akar safety` call) and `--install` (copies templates into `.akar/hooks/` after user types INSTALL, creates backups before overwrite). AKAR does not modify `~/.claude/settings.json` or install hooks automatically. Updated README and docs. 194 tests passing.
+
+## v0.4.1 — 2026-07-05
+Cleanup leftovers. Deleted `circuit_breaker.rs` (unused in production paths). Removed module declaration from `main.rs`. Fixed `OPERATING_MODEL.md` circuit breaker section (was claiming behavior that never existed). Updated `AKAR_ADOPTION_NOTES.md` module list. Added clarifying comment to `context_pack.rs` that it builds a path tier list only and does not read file contents. No behavior added or changed. 190 tests passing.
+
+## v0.4.0 — 2026-07-05
+Honest Scaffold release. Fixed `akar run` UX to clearly state advisory/scaffold mode with no code execution. Removed dead model drift code (SessionFingerprint, detect_drift, calibrate_from_prompt, git helpers). Simplified design.rs to DNA-check only (removed frontend file scanner). Deprecated event-count request pressure inference — pressure mode now requires explicit used/limit counts. Fixed preflight skill conflict noise — scans project-local skills only instead of all 200+ global skills. Fixed README and docs to replace overclaims ("enforces diff budget" → "reports a diff budget", "installs hooks" → "prints hook instructions", "proposes learning" → "writes generic learning notes"). Added LEARNING_PATCHES.md and NEXT_RUN.md to .gitignore. Added audit documents and architecture freeze proposal. 190 tests passing.
+
+## v0.3.0 — 2026-07-04
+Added `akar init` onboarding command (bootstrap + doctor + next-steps guide, shell detection, --claude flag). Expanded INSTALL.md with runtime layout, configuration precedence, migration, and version compatibility sections. Expanded OPERATING_MODEL.md with onboarding (D), lifecycle (E), passive runtime (F), Claude integration (G), and health & recovery (H) sections. Fixed .gitignore to commit .akar/*.md templates while ignoring EVENT_LOG.jsonl and generated files. Updated docs/README.md with full doc index.
+
 ## v0.2.2 — 2026-07-04
 Public GitHub polish: repo cleanup, README rewrite, CONTRIBUTING, SECURITY, CHANGELOG. Removed tracked runtime artifacts (.akar/, reports/). No new runtime features.
 

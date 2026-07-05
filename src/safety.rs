@@ -37,6 +37,30 @@ pub fn classify_command(command: &str) -> RiskAssessment {
 
     // --- Critical (blocked) checks first ---
 
+    // Destructive root/filesystem wipe patterns — always blocked
+    // Covers: rm -rf /, rm -rf /*, sudo variants, rm -fr variants,
+    // Windows del /s /q C:\, Remove-Item -Recurse -Force C:\ or /
+    let is_destructive_wipe =
+        // Unix: rm [-rf|-fr] targeting / or /*
+        (lower.contains("rm ") && (lower.contains("-rf") || lower.contains("-fr"))
+            && (lower.ends_with(" /") || lower.ends_with(" /*")
+                || lower.contains(" / ") || lower.contains(" /* ")))
+        // Windows: del /s /q targeting C:\ or root
+        || (lower.contains("del ") && lower.contains("/s") && lower.contains("/q")
+            && (lower.contains("c:\\") || lower.contains("c:/")))
+        // PowerShell: Remove-Item -Recurse -Force targeting C:\ or /
+        || (lower.contains("remove-item") && lower.contains("-recurse") && lower.contains("-force")
+            && (lower.contains("c:\\") || lower.contains("c:/") || lower.ends_with(" /")));
+
+    if is_destructive_wipe {
+        return RiskAssessment {
+            command: command.to_string(),
+            risk: CommandRisk::Critical,
+            reason: "destructive filesystem wipe detected — targets root or entire drive".to_string(),
+            blocked: true,
+        };
+    }
+
     // Pipe-to-shell patterns: curl ... | bash  or  curl ... | sh
     if lower.contains("curl") && (lower.contains("| bash") || lower.contains("|bash")
         || lower.contains("| sh") || lower.contains("|sh"))
@@ -286,9 +310,64 @@ mod tests {
     }
 
     #[test]
-    fn classify_rm_rf_is_high() {
+    fn classify_rm_rf_root_is_critical_and_blocked() {
         let r = classify_command("rm -rf /");
-        assert_eq!(r.risk, CommandRisk::High);
+        assert_eq!(r.risk, CommandRisk::Critical);
+        assert!(r.blocked);
+    }
+
+    #[test]
+    fn classify_rm_rf_root_wildcard_is_blocked() {
+        let r = classify_command("rm -rf /*");
+        assert!(r.blocked);
+    }
+
+    #[test]
+    fn classify_sudo_rm_rf_root_is_blocked() {
+        let r = classify_command("sudo rm -rf /");
+        assert!(r.blocked);
+    }
+
+    #[test]
+    fn classify_sudo_rm_rf_wildcard_is_blocked() {
+        let r = classify_command("sudo rm -rf /*");
+        assert!(r.blocked);
+    }
+
+    #[test]
+    fn classify_rm_fr_root_is_blocked() {
+        let r = classify_command("rm -fr /");
+        assert!(r.blocked);
+    }
+
+    #[test]
+    fn classify_rm_fr_wildcard_is_blocked() {
+        let r = classify_command("rm -fr /*");
+        assert!(r.blocked);
+    }
+
+    #[test]
+    fn classify_windows_del_root_is_blocked() {
+        let r = classify_command("del /s /q C:\\");
+        assert!(r.blocked);
+    }
+
+    #[test]
+    fn classify_powershell_remove_item_root_is_blocked() {
+        let r = classify_command("Remove-Item -Recurse -Force C:\\");
+        assert!(r.blocked);
+    }
+
+    #[test]
+    fn classify_powershell_remove_item_unix_root_is_blocked() {
+        let r = classify_command("Remove-Item -Recurse -Force /");
+        assert!(r.blocked);
+    }
+
+    #[test]
+    fn classify_rm_rf_subdir_is_not_blocked() {
+        // rm -rf on a subdirectory is High risk but not blocked
+        let r = classify_command("rm -rf ./build");
         assert!(!r.blocked);
     }
 

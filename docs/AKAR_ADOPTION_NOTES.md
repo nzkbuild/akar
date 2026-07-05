@@ -66,7 +66,7 @@ These are pure documentation — zero risk, high value for future phases.
 - `akar verify`, `akar bootstrap`, `akar safety`, `akar skills`, `akar calibrate`, `akar hooks` — all operational
 
 **Modules implemented:**
-config, doctor, event_log, backup, safe_fix, contract, context_pack, verify, mission, design, safety, skill_registry, model_profile, eval, circuit_breaker
+config, doctor, event_log, backup, safe_fix, contract, context_pack, verify, mission, design, safety, skill_registry, model_profile, eval
 
 **Known limitations:**
 - Execute phase is scaffold only — `akar mission` classifies and plans but does not run code changes

@@ -4,30 +4,74 @@
   <img src="assets/branding/akar.png" alt="AKAR" width="180" />
 </p>
 
-**A local CLI companion for AI-assisted software engineering.**
+**A local advisory CLI for AI-assisted software engineering.**
 
-AKAR sits alongside Claude Code and helps add structure to AI coding sessions — preflight checks, diff budgets, skill awareness, local telemetry, postmortems, and learning notes.
+AKAR sits alongside Claude Code and adds structure to AI coding sessions — preflight checks, diff budget reporting, skill awareness, local telemetry, postmortems, and learning notes.
 
-It does not write your code. It helps slow the agent down before it does something weird.
+It does not write your code. It does not execute fixes. It does not edit project files. It prints advice and records what happened.
 
 ---
 
 ## What it does
 
 - Classifies your task before the agent touches anything
-- Enforces a diff budget so a small fix stays small
-- Detects skill conflicts (e.g. two methodology controllers active at once)
+- Reports a diff budget so you know the expected scope (not enforced yet)
+- Detects skill conflicts (e.g. two methodology controllers active at once) and reports them
 - Records local-only telemetry after each mission
 - Summarises what happened and whether it went well
-- Proposes a learning note if something degraded or failed
+- Writes generic learning notes if something degraded or failed
+- Prints hook installation instructions (does not install hooks automatically)
 
 ## What it does not do
 
 - It is not an AI model
 - It does not replace Claude Code
-- It does not write or execute code changes (v0.2.x is scaffold/runtime mode)
+- It does not execute code changes or edit project files
+- It does not enforce diff budgets (reports them only)
+- It does not install hooks automatically
 - It does not send data anywhere — everything stays in `.akar/` on your machine
 - It is not a benchmark, cloud service, or plugin marketplace
+
+---
+
+## Baseline diff workflow
+
+Step 1 — before your Claude Code session:
+```
+akar preflight --snapshot "fix the login button"
+```
+Requires a clean working tree. Writes `.akar/DIFF_BASELINE.json`.
+
+Step 2 — run your Claude Code session manually.
+
+Step 3 — after your session:
+```
+akar postmortem --diff --baseline
+```
+Measures from saved HEAD to current working tree. Reports PASS, EXCEEDED, or UNKNOWN.
+AKAR does not enforce, block, revert, stash, commit, reset, or clean changes.
+
+---
+
+## Full baseline loop readiness
+
+Before starting a measured session:
+
+1. Run `akar status` — check the `baseline loop readiness` section.
+2. If readiness is `BLOCKED`, commit or otherwise clean your work manually. AKAR does not clean, stash, commit, reset, or revert for you.
+3. Run `akar preflight --snapshot "<task>"` only after status shows `READY`.
+4. Run your Claude Code session.
+5. Run `akar postmortem --diff --baseline` to measure the result.
+
+AKAR does not clean, stash, commit, reset, or revert for you.
+
+---
+
+## Development approach
+
+AKAR is developed using loop engineering: small scoped AI-assisted iterations with human audit, verification, and architecture freeze. Each release proves one thing. No release bumps the version until build and tests pass and the diff has been reviewed.
+
+v0.7.0 captured partial session evidence: dirty-tree refusal, safety blocking, and advisory-only behavior were verified; the full clean-baseline loop remains unverified.
 
 ---
 
@@ -40,9 +84,8 @@ cargo build --release
 # Verify
 akar --version
 
-# Initialise a project
-akar bootstrap
-akar doctor
+# Initialise a project (bootstrap + doctor + next-steps guide)
+akar init
 ```
 
 See [docs/INSTALL.md](docs/INSTALL.md) for full install instructions.
@@ -52,12 +95,12 @@ See [docs/INSTALL.md](docs/INSTALL.md) for full install instructions.
 ## Normal workflow
 
 ```
-akar bootstrap          # one-time project setup
-akar doctor             # confirm health
-akar preflight "task"   # review strategy before acting
-akar run "task"         # full workflow in one command
-akar postmortem         # review what happened
-akar learn              # propose a learning note if needed
+akar init               — first-run setup (bootstrap + doctor + guide)
+akar doctor             — confirm health
+akar preflight "task"   — review strategy before acting
+akar run "task"         — full workflow in one command
+akar postmortem         — review what happened
+akar learn              — propose a learning note if needed
 ```
 
 ---
@@ -66,23 +109,29 @@ akar learn              # propose a learning note if needed
 
 | Command | Description |
 |---|---|
+| `akar init` | First-run onboarding: bootstrap + doctor + guide |
+| `akar init --claude` | Onboarding with Claude Code integration instructions |
 | `akar status` | Runtime health at a glance |
 | `akar bootstrap` | Initialise `.akar/` with memory templates |
 | `akar doctor` | Read-only health check |
 | `akar doctor --fix` | Apply safe reversible fixes |
 | `akar preflight "<task>"` | Strategy review before acting |
-| `akar run "<task>"` | Full workflow: preflight → mission → postmortem |
+| `akar run "<task>"` | Advisory workflow: preflight → mission → postmortem (no code executed) |
 | `akar mission "<task>"` | Mission state machine (scaffold mode) |
 | `akar telemetry` | Show local event log |
-| `akar postmortem` | Review latest outcome |
-| `akar learn` | Propose learning patch if degraded or failed |
+| `akar postmortem` | Review latest mission outcome |
+| `akar postmortem --diff` | Measure actual git diff against preflight budget (reports only, does not enforce) |
+| `akar postmortem --diff --baseline` | Measure diff from saved baseline HEAD to current working tree |
+| `akar learn` | Write generic learning note if degraded or failed |
 | `akar skills` | Skill registry with conflict detection |
 | `akar request` | Request pressure advisory |
 | `akar eval` | Run eval harness (28 scenarios) |
 | `akar verify` | Run verification recipe |
 | `akar safety "<cmd>"` | Classify command risk level |
 | `akar calibrate` | Model/gateway profile |
-| `akar hooks` | Hook install instructions |
+| `akar hooks` | Print hook template locations and manual install instructions |
+| `akar hooks --check` | Verify hook templates exist and are valid |
+| `akar hooks --install` | Copy templates into `.akar/hooks/` (requires confirmation) |
 
 ---
 
@@ -91,7 +140,7 @@ akar learn              # propose a learning note if needed
 ```
 $ akar status
 status: HEALTHY
-  runtime:    akar 0.2.2
+  runtime:    akar 0.3.0
   doctor:     OK
   bootstrap:  OK
   telemetry:  42 event(s)
@@ -116,8 +165,10 @@ preflight:
 
 ## Project state
 
-- **Maturity:** early, local-first, scaffold mode
-- **Code execution:** not yet — AKAR classifies and records, does not edit files
+- **Maturity:** early, local-first, advisory scaffold
+- **Execution:** none — AKAR classifies and records, does not edit files or execute code
+- **Diff budgets:** measures actual git diff and reports PASS/EXCEEDED (does not enforce, block, or revert)
+- **Hooks:** ships templates, copies into `.akar/hooks/` after confirmation, user connects to Claude Code manually
 - **Data:** everything stays in `.akar/` on your machine, gitignored by default
 - **Global config:** AKAR does not edit `~/.claude/` unless you explicitly run `akar bootstrap`
 

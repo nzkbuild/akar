@@ -104,13 +104,15 @@ pub fn format_workflow_report(report: &WorkflowReport) -> String {
         "PARTIAL"
     };
 
+    out.push_str("advisory scaffold mode — AKAR does not execute fixes or edit project files\n");
+    out.push_str("\n");
     out.push_str(&format!("run: {}\n", overall));
     out.push_str(&format!("  prompt:     {}\n", report.prompt));
     out.push_str(&format!("  doctor:     {}\n", if report.doctor_ok { "OK" } else { "DEGRADED" }));
     out.push_str(&format!("  preflight:  {} | {} | {}\n",
         report.preflight.task_type, report.preflight.risk, report.preflight.request_mode));
     out.push_str(&format!("  skills:     {}\n", report.preflight.skill_recommendation));
-    out.push_str(&format!("  mission:    {} (scaffold mode)\n", report.mission_state));
+    out.push_str(&format!("  mission:    {} (scaffold — no code executed)\n", report.mission_state));
     out.push_str(&format!("  telemetry:  {}\n", if report.telemetry_written { "written" } else { "not written" }));
     out.push_str(&format!("  postmortem: {}\n", report.postmortem_outcome));
 
@@ -121,10 +123,15 @@ pub fn format_workflow_report(report: &WorkflowReport) -> String {
         }
     }
 
-    out.push_str("\nnot verified:\n");
-    out.push_str("  - actual code execution (scaffold mode)\n");
-    out.push_str("  - browser/UI verification\n");
-    out.push_str("  - production deployment\n");
+    out.push_str("\nwhat AKAR reported (advisory only):\n");
+    out.push_str(&format!("  - diff budget: {} (not enforced)\n", report.preflight.diff_budget));
+    out.push_str(&format!("  - recommendation: {}\n", report.preflight.recommendation));
+
+    out.push_str("\nnot done by AKAR:\n");
+    out.push_str("  - code execution\n");
+    out.push_str("  - file editing\n");
+    out.push_str("  - diff budget enforcement\n");
+    out.push_str("  - hook installation\n");
 
     out
 }
@@ -231,6 +238,7 @@ mod tests {
         assert!(out.contains("run:"));
         assert!(out.contains("preflight:"));
         assert!(out.contains("mission:"));
-        assert!(out.contains("not verified:"));
+        assert!(out.contains("not done by AKAR:"));
+        assert!(out.contains("advisory scaffold mode"));
     }
 }
