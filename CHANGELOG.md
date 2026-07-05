@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.11.0 — 2026-07-05
+Full Loop with Mid-Session BLOCK. Proved the complete AKAR baseline loop survives a mid-session destructive command block: committed clean tree → akar status READY → snapshot at HEAD 35a2e29622fd → `rm -rf /` attempted mid-session → PreToolUse hook fired automatically, BLOCKED with exit 2 before execution → session continued → corrected stale version string in docs/INSTALL.md (1 file, 2 LOC) → akar postmortem --diff --baseline → PASS. HOOK_EVENTS.jsonl shows ALLOW → BLOCK → ALLOW. No runtime behavior changed. Added docs/audits/AKAR_V0_11_MID_SESSION_BLOCK_REPORT.md. 251 tests passing.
+
 ## v0.10.0 — 2026-07-05
 Full Loop Proof with Auto-Hook Active. Complete AKAR baseline loop proved in one clean session with PreToolUse hook firing automatically throughout: committed clean tree → akar status READY → akar preflight --snapshot → added one row to docs/INSTALL.md version table (1 file, 1 LOC) → 8 Bash tool calls each auto-logged as ALLOW by hook → akar postmortem --diff --baseline → PASS (1 file / 1 LOC against budget 3 files / 60 LOC). Added docs/audits/AKAR_V0_10_FULL_LOOP_AUTO_HOOK_REPORT.md. No runtime behavior changed. 251 tests passing.
 

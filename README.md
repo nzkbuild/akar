@@ -71,6 +71,8 @@ AKAR does not clean, stash, commit, reset, or revert for you.
 
 AKAR is developed using loop engineering: small scoped AI-assisted iterations with human audit, verification, and architecture freeze. Each release proves one thing. No release bumps the version until build and tests pass and the diff has been reviewed.
 
+v0.11.0 proves a full baseline loop survives a mid-session safety block: `rm -rf /` blocked by auto-hook mid-session, loop continued, postmortem --baseline PASS.
+
 v0.10.0 proves the full loop with auto-hook active: clean tree → snapshot → scoped change → postmortem --baseline → PASS, with PreToolUse hook logging all 8 Bash calls automatically.
 
 v0.9.0 contains first auto-hook evidence: PreToolUse hook fired automatically, safe commands ALLOW'd, `rm -rf /` BLOCK'd with exit 2 before execution.
