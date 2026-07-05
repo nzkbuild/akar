@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.10.0 — 2026-07-05
+Full Loop Proof with Auto-Hook Active. Complete AKAR baseline loop proved in one clean session with PreToolUse hook firing automatically throughout: committed clean tree → akar status READY → akar preflight --snapshot → added one row to docs/INSTALL.md version table (1 file, 1 LOC) → 8 Bash tool calls each auto-logged as ALLOW by hook → akar postmortem --diff --baseline → PASS (1 file / 1 LOC against budget 3 files / 60 LOC). Added docs/audits/AKAR_V0_10_FULL_LOOP_AUTO_HOOK_REPORT.md. No runtime behavior changed. 251 tests passing.
+
 ## v0.9.0 — 2026-07-05
 First Auto-Hook Evidence. PreToolUse hook fired automatically on every Bash tool call throughout the session. Safe commands (echo, cargo build, cargo test) logged ALLOW/exit 0. `rm -rf /` logged BLOCK/exit 2 — Claude Code blocked execution before rm ran. Hook was wired manually by user into ~/.claude/settings.json. AKAR did not modify Claude Code configuration. akar.exe must be on the subprocess PATH (C:\Users\nbzkr\bin\) for classification to run. Previous attempt failed because akar was not on subprocess PATH — documented honestly. Evidence in docs/audits/AKAR_V0_9_AUTO_HOOK_EVIDENCE.md. No runtime behavior changed. 251 tests passing.
 

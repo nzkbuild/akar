@@ -152,6 +152,7 @@ AKAR memory files are plain Markdown. They are forward-compatible: new versions 
 |---|---|---|
 | v0.1.x | v1 | Initial layout, 9 templates |
 | v0.2.x | v1 | Same layout, additive changes only |
+| v0.9.x | v1 | Hook templates added; additive only |
 
 ---
 
