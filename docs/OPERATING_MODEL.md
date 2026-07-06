@@ -2,9 +2,9 @@
 
 ## What AKAR is
 
-AKAR is a local runtime governance layer for Claude Code.
-It classifies tasks, enforces diff budgets, runs verification, records telemetry, and summarizes outcomes.
-It sits between the user's prompt and Claude Code's execution.
+AKAR is a local, **advisory-only** runtime governance layer for Claude Code.
+It classifies tasks, reports diff budgets, runs verification recipes on demand, records local telemetry, and summarizes outcomes.
+It sits alongside the user's prompt and Claude Code's execution — it prints advice and records what happened, but does not execute the task, edit project files, call models, or run missions.
 
 ## What AKAR is not
 
@@ -47,7 +47,7 @@ For projects where you also want Claude Code slash commands:
 akar init --claude
 ```
 
-This adds instructions for wiring up `/akar-preflight`, `/akar-doctor`, and related slash commands.
+This prints instructions for wiring up the AKAR slash commands that ship in `.claude/commands/`.
 
 ### What bootstrap creates
 
@@ -58,7 +58,7 @@ This adds instructions for wiring up `/akar-preflight`, `/akar-doctor`, and rela
 ```
 akar status              — confirm runtime health
 akar preflight "task"    — see the strategy before touching anything
-akar run "task"          — full workflow in one command
+akar run "task"          — full advisory workflow in one command (prints strategy + records telemetry; does not execute)
 ```
 
 ---
@@ -92,7 +92,7 @@ IDLE
 → DONE
 ```
 
-In v0.2.x, AKAR is in scaffold mode: it classifies, plans, and records — but does not execute code changes. Real execution is planned for v0.3+.
+AKAR is in scaffold mode by design (v1 architecture freeze): it classifies, plans, and records — but does not execute code changes. Execution is not a version lag; it is explicitly out of scope until a v1.0 design review authorizes a bounded execution path.
 
 ### Failure path
 
@@ -120,7 +120,7 @@ AKAR does not run in the background. It is purely command-driven.
 The "passive runtime" is the set of `.akar/` memory files that accumulate over time:
 
 - `EVENT_LOG.jsonl` grows as missions run
-- `STATE.md` is updated after each session
+- `STATE.md` is a template the user edits; AKAR does not auto-update it after a session
 - `LESSONS.md` grows as `akar learn` proposes patches
 
 ### Observe
@@ -167,7 +167,7 @@ Copy the provided command files to your project's `.claude/commands/`:
 cp .claude/commands/akar-*.md <your-project>/.claude/commands/
 ```
 
-Available slash commands:
+Available slash commands (these are the only `.claude/commands/akar-*.md` files AKAR ships):
 
 | Command | Equivalent CLI |
 |---|---|
@@ -178,18 +178,34 @@ Available slash commands:
 | `/akar-status` | `akar status` |
 | `/akar-eval` | `akar eval` |
 
+Note: `/akar-preflight` and `/akar-doctor-fix` are sometimes referenced in older notes but do not exist as command files. Use the CLI directly (`akar preflight "<task>"`, `akar doctor --fix`).
+
 ### Hooks
 
-AKAR ships two optional pre-commit hooks:
+The current, proven hook is a **Claude Code PreToolUse** hook (not a git pre-commit hook). AKAR ships two templates:
 
 ```
-hooks/pre-commit-akar.sh    — bash/POSIX
-hooks/pre-commit-akar.ps1   — PowerShell
+templates/hooks/pre-tool-call.sh    — bash/POSIX
+templates/hooks/pre-tool-call.ps1   — PowerShell
 ```
 
-Install by copying to `.git/hooks/pre-commit` (or merging if a hook already exists).
+The hook calls `akar safety "<command>"` before each Bash tool call, blocks destructive commands (exit 2), and logs every decision to `.akar/HOOK_EVENTS.jsonl`. This is the only piece of real runtime enforcement AKAR provides, and it is owned by the user: AKAR never edits `~/.claude/settings.json` automatically.
 
-The hook runs `akar doctor` before each commit and blocks the commit if doctor returns issues.
+Verify the templates are valid:
+
+```
+akar hooks --check
+```
+
+Install the templates into `.akar/hooks/` (requires confirmation, backs up first):
+
+```
+akar hooks --install
+```
+
+You must register the hook in `~/.claude/settings.json` manually. If `akar` is not on the subprocess PATH Claude Code uses for hooks, the hook fails open (ALLOW + warning) — so confirm `akar` is resolvable from that PATH.
+
+An older `hooks/pre-commit-akar.{sh,ps1}` design (git pre-commit running `akar doctor`) still exists in `hooks/` for reference, but the PreToolUse hook above is the proven integration.
 
 ### Settings example
 
@@ -275,21 +291,28 @@ next: hint for what to do
 
 No essays. No fake certainty. If something is not verified, AKAR says so.
 
-Final response format for missions:
+Final response format for missions (advisory — AKAR does not execute the task):
 
 ```
+ADVISORY ONLY — `akar mission` walks the state machine in scaffold mode. It does NOT:
+  - execute code
+  - edit files
+  - call models
+  - run the mission
+
 done.
 
-changed:
-  - file.rs
+Mission:
+- prompt: fix the login bug
+- type: Bugfix
+- risk: Low
+- diff budget: 3 files, 60 LOC
 
-verified:
-  - cargo build: ok
-  - cargo test: ok
+Verified:
+- scaffold mode (commands not executed)
 
-not verified:
-  - browser rendering (no browser driver)
-
-notes:
-  - stayed within diff budget (2 files, 45 LOC)
+Not verified:
+- actual execution
 ```
+
+The "changed: file.rs / verified: cargo build: ok" shape shown in older notes describes a future execution-capable mission, not current AKAR. Today AKAR reports strategy and records telemetry only; the human (or Claude Code, driven by the user) does the work.

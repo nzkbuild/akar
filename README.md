@@ -24,7 +24,7 @@ It does not write your code. It does not execute fixes. It does not edit project
 
 ## Foundation knowledge
 
-AKAR v0.12.0 carries local playbooks for safe git, shell, hook, and loop behavior.
+AKAR carries local playbooks for safe git, shell, hook, and loop behavior.
 
 - `docs/foundation/AKAR_FOUNDATION.md` — first principles
 - `docs/foundation/SAFE_GIT_PLAYBOOK.md` — allowed and forbidden git patterns
@@ -44,7 +44,7 @@ AKAR provides alternatives before retry. It does not execute the playbooks autom
 
 ## Knowledge-driven loop governor
 
-AKAR v0.13.0 uses local evidence plus foundation playbooks to suggest the next safe loop action, so Claude avoids repeated failed commands, dirty-tree confusion, and token-wasting retry loops.
+AKAR uses local evidence plus foundation playbooks to suggest the next safe loop action, so Claude avoids repeated failed commands, dirty-tree confusion, and token-wasting retry loops.
 
 The governor reads local evidence only:
 - git repository status and working tree clean state
@@ -157,7 +157,7 @@ It prints `NEXT_RUN check: PASS` (exit 0) or `NEXT_RUN check: FAIL` with one rea
 
 ## Learning patch lifecycle
 
-AKAR v0.14.0 gives learning patches a status so stale `.akar/LEARNING_PATCHES.md` entries stop forcing `SPLIT_TASK` forever while useful unresolved lessons are preserved.
+AKAR gives learning patches a status so stale `.akar/LEARNING_PATCHES.md` entries stop forcing `SPLIT_TASK` forever while useful unresolved lessons are preserved.
 
 Each learning patch entry may carry a status line:
 
@@ -292,19 +292,23 @@ akar learn              — propose a learning note if needed
 | `akar doctor` | Read-only health check |
 | `akar doctor --fix` | Apply safe reversible fixes |
 | `akar preflight "<task>"` | Strategy review before acting |
-| `akar run "<task>"` | Advisory workflow: preflight → mission → postmortem (no code executed) |
-| `akar mission "<task>"` | Mission state machine (scaffold mode) |
+| `akar run "<task>"` | Advisory scaffold only: preflight → mission → postmortem (prints strategy + records telemetry; does not execute, edit files, call models, or run the mission) |
+| `akar mission "<task>"` | Advisory/report-only scaffold: walks the state machine in scaffold mode (no code executed) |
 | `akar telemetry` | Show local event log |
 | `akar postmortem` | Review latest mission outcome |
 | `akar postmortem --diff` | Measure actual git diff against preflight budget (reports only, does not enforce) |
 | `akar postmortem --diff --baseline` | Measure diff from saved baseline HEAD to current working tree |
 | `akar learn` | Write generic learning note if degraded or failed |
-| `akar skills` | Skill registry with conflict detection |
-| `akar request` | Request pressure advisory |
+| `akar learn --list` | Print active/resolved learning-patch counts (read-only) |
+| `akar learn --resolve` | Mark all active patches `status: resolved` (leaves file in place) |
+| `akar skills` | Skill registry with conflict detection (report only) |
+| `akar request` | Request pressure advisory; writes compiled `.akar/NEXT_RUN.md` |
+| `akar request --check` | Validate `.akar/NEXT_RUN.md` against the next-run contract (read-only; exit 0 on PASS, non-zero on FAIL) |
+| `akar governor` | Print the loop governor decision (advisory; does not write files or mutate git) |
 | `akar eval` | Run eval harness (28 scenarios) |
-| `akar verify` | Run verification recipe |
-| `akar safety "<cmd>"` | Classify command risk level |
-| `akar calibrate` | Model/gateway profile |
+| `akar verify` | Run verification recipe (the one command that runs cargo/npm — user-invoked) |
+| `akar safety "<cmd>"` | Classify command risk level (exits 2 for BLOCKED) |
+| `akar calibrate` | Model/gateway profile (display only) |
 | `akar hooks` | Print hook template locations and manual install instructions |
 | `akar hooks --check` | Verify hook templates exist and are valid |
 | `akar hooks --install` | Copy templates into `.akar/hooks/` (requires confirmation) |
@@ -316,7 +320,7 @@ akar learn              — propose a learning note if needed
 ```
 $ akar status
 status: HEALTHY
-  runtime:    akar 0.3.0
+  runtime:    akar 0.22.0
   doctor:     OK
   bootstrap:  OK
   telemetry:  42 event(s)
@@ -357,7 +361,8 @@ preflight:
 - [Evaluation Plan](docs/EVALUATION_PLAN.md)
 - [Changelog](CHANGELOG.md)
 - [Architecture](docs/architecture/AKAR_OS.md)
-- [Roadmap](docs/architecture/PRODUCT_ROADMAP.md)
+- [Architecture freeze (source of truth)](docs/architecture/AKAR_V1_ARCHITECTURE_FREEZE_PROPOSAL.md)
+- [Roadmap (superseded — historical)](docs/architecture/PRODUCT_ROADMAP.md)
 
 ---
 

@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 // ---------------------------------------------------------------------------
 
 /// The set of fixes that `akar doctor --fix` can apply automatically.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum SafeFix {
     /// Create a missing directory (no backup needed — nothing to overwrite).
@@ -20,8 +19,6 @@ pub enum SafeFix {
         dest: PathBuf,
         template_name: String,
     },
-    /// Normalise path separators / casing — no-op placeholder for now.
-    NormalizePath(PathBuf),
 }
 
 // ---------------------------------------------------------------------------
@@ -90,11 +87,6 @@ pub fn apply_safe_fix(fix: &SafeFix, template_dir: &Path) -> Result<String, Stri
                 "created {} from template",
                 dest.display()
             ))
-        }
-
-        SafeFix::NormalizePath(_path) => {
-            // No-op for now; reserved for future path normalisation logic.
-            Ok("ok".to_string())
         }
     }
 }
@@ -234,12 +226,6 @@ mod tests {
     }
 
     // -- NormalizePath --------------------------------------------------------
-
-    #[test]
-    fn normalize_path_returns_ok() {
-        let base = temp_dir("norm");
-        let fix = SafeFix::NormalizePath(base.join("whatever.txt"));
-        let result = apply_safe_fix(&fix, &base).expect("NormalizePath should not error");
-        assert_eq!(result, "ok");
-    }
+    // (Removed in v0.22: the NormalizePath variant was dead code — never
+    // constructed anywhere, only tested. Its match arm was a no-op.)
 }

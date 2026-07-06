@@ -1,7 +1,23 @@
-//! Phase 13: Safety, Dependency Governor, and Migration Safety modules.
+//! Safety module: command risk classification, secret detection, and a small
+//! policy library.
 //!
-//! Provides command risk classification, secret leak detection,
-//! dependency governance, and migration safety checks.
+//! This module has two parts with different reachability:
+//!
+//! - **Runtime (hook-critical):** [`classify_command`] and [`check_secrets`].
+//!   These are called by `akar safety`, by the PreToolUse hook (via the hook
+//!   templates), and by `akar status`. They are the only safety functions on
+//!   a runtime command path.
+//!
+//! - **Policy library (eval-only, not a runtime governor):** [`govern_dependency`]
+//!   and [`check_migration`] are pure policy functions that evaluate a
+//!   [`DependencyProposal`] or [`MigrationCheck`] and return an
+//!   `(approved/safe, message)` pair. They are **not** called from any runtime
+//!   command in `main.rs` and are **not** a runtime dependency governor or
+//!   migration governor. They exist to be exercised by evals #19 and #20
+//!   (`dependency_govern_critical`, `migration_no_rollback`) so the policy
+//!   logic stays tested. AKAR does not install dependencies or run migrations
+//!   at runtime — by the v1 architecture freeze, it never executes code from
+//!   these paths.
 
 // ---------------------------------------------------------------------------
 // CommandRisk
@@ -201,9 +217,12 @@ pub fn check_secrets(text: &str) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------
-// DependencyProposal
+// DependencyProposal (policy library — eval-only, not a runtime governor)
 // ---------------------------------------------------------------------------
 
+/// A dependency proposal evaluated by the policy library.
+///
+/// Not constructed on any runtime command path; built only by eval #19.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DependencyProposal {
     pub name: String,
@@ -212,10 +231,16 @@ pub struct DependencyProposal {
 }
 
 // ---------------------------------------------------------------------------
-// govern_dependency
+// govern_dependency (policy library — eval-only, not a runtime governor)
 // ---------------------------------------------------------------------------
 
 /// Evaluate a `DependencyProposal` and return `(approved, explanation)`.
+///
+/// **Policy library function, not a runtime governor.** This is reachable only
+/// via eval #19 (`dependency_govern_critical`) and unit tests — it is not
+/// called from `main.rs`. AKAR does not install dependencies at runtime; this
+/// function exists so the approval policy stays tested. Wiring it into a real
+/// command path would require a v1 design review.
 pub fn govern_dependency(proposal: &DependencyProposal) -> (bool, String) {
     match proposal.risk {
         CommandRisk::Critical => (
@@ -240,9 +265,12 @@ pub fn govern_dependency(proposal: &DependencyProposal) -> (bool, String) {
 }
 
 // ---------------------------------------------------------------------------
-// MigrationCheck
+// MigrationCheck (policy library — eval-only, not a runtime governor)
 // ---------------------------------------------------------------------------
 
+/// A migration check evaluated by the policy library.
+///
+/// Not constructed on any runtime command path; built only by eval #20.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MigrationCheck {
     pub description: String,
@@ -251,10 +279,16 @@ pub struct MigrationCheck {
 }
 
 // ---------------------------------------------------------------------------
-// check_migration
+// check_migration (policy library — eval-only, not a runtime governor)
 // ---------------------------------------------------------------------------
 
 /// Evaluate a `MigrationCheck` and return `(safe_to_proceed, message)`.
+///
+/// **Policy library function, not a runtime governor.** This is reachable only
+/// via eval #20 (`migration_no_rollback`) and unit tests — it is not called
+/// from `main.rs`. AKAR does not run migrations at runtime; this function
+/// exists so the safety policy stays tested. Wiring it into a real command
+/// path would require a v1 design review.
 pub fn check_migration(check: &MigrationCheck) -> (bool, String) {
     if check.destructive && !check.has_rollback {
         return (

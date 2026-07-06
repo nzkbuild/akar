@@ -42,7 +42,7 @@ sudo cp target/release/akar /usr/local/bin/akar
 akar --version
 ```
 
-Expected: `akar 0.10.0`
+Expected: `akar <current version>` (e.g. `akar 0.22.0`). Run `akar --version` to confirm; the version always matches `Cargo.toml`.
 
 ### Update
 
@@ -128,7 +128,7 @@ project_name  = basename of project_root
 4. Compiled-in defaults
 ```
 
-No env vars are required. No `.env` file. No TOML/JSON config file for v0.2.x.
+No env vars are required. No `.env` file. No TOML/JSON config file.
 
 ### Verify configuration
 
@@ -152,7 +152,12 @@ AKAR memory files are plain Markdown. They are forward-compatible: new versions 
 |---|---|---|
 | v0.1.x | v1 | Initial layout, 9 templates |
 | v0.2.x | v1 | Same layout, additive changes only |
-| v0.9.x | v1 | Hook templates added; additive only |
+| v0.5.x | v1 | PreToolUse hook templates added; additive only |
+| v0.6.x | v1 | Real diff measurement (`postmortem --diff`); additive only |
+| v0.13.x–v0.20.x | v1 | Loop governor, NEXT_RUN compiler, request `--check` validator; additive only |
+| v0.21.x–v0.22.x | v1 | Audit + honest-edges cleanup; no template format change |
+
+AKAR memory files are plain Markdown and forward-compatible: new versions add template sections but never remove existing ones. The template format has not changed since v1.
 
 ---
 

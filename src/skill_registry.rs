@@ -47,6 +47,11 @@ pub enum SkillRole {
 pub struct SkillEntry {
     pub name: String,
     pub source: SkillSource,
+    /// Collected from the skill file's first line but not currently read by any
+    /// runtime report. Retained for future skill-conflict-on-purpose analysis
+    /// (the v0.4 freeze removed automatic duplicate detection from the runtime
+    /// path; `detect_duplicates` was removed in v0.22 as eval/test-only).
+    #[allow(dead_code)]
     pub purpose: String,
     #[allow(dead_code)]
     pub risk: String,
@@ -241,68 +246,6 @@ fn read_first_line(path: &Path) -> String {
     }
 
     String::new()
-}
-
-// ---------------------------------------------------------------------------
-// detect_duplicates
-// ---------------------------------------------------------------------------
-
-/// Return pairs of `(name_a, name_b)` where both skills share the same purpose.
-/// Only non-empty purposes are compared.
-#[allow(dead_code)]
-pub fn detect_duplicates(skills: &[SkillEntry]) -> Vec<(String, String)> {
-    let mut pairs = Vec::new();
-
-    for i in 0..skills.len() {
-        for j in (i + 1)..skills.len() {
-            let a = &skills[i];
-            let b = &skills[j];
-            if !a.purpose.is_empty() && a.purpose == b.purpose {
-                pairs.push((a.name.clone(), b.name.clone()));
-            }
-        }
-    }
-
-    pairs
-}
-
-// ---------------------------------------------------------------------------
-// format_registry
-// ---------------------------------------------------------------------------
-
-/// Format the skill registry as a human-readable string.
-#[allow(dead_code)]
-pub fn format_registry(skills: &[SkillEntry]) -> String {
-    let mut out = String::new();
-    out.push_str(&format!("skills: {} registered\n", skills.len()));
-    for skill in skills {
-        let source = match skill.source {
-            SkillSource::ClaudeBundled => "claude-bundled",
-            SkillSource::Superpower => "superpower",
-            SkillSource::Custom => "custom",
-            SkillSource::Project => "project",
-        };
-        let status = match skill.status {
-            SkillStatus::Active => "active",
-            SkillStatus::Wrapped => "wrapped",
-            SkillStatus::Disabled => "disabled",
-            SkillStatus::Replaced => "replaced",
-            SkillStatus::Testing => "testing",
-        };
-        let role = match skill.role {
-            SkillRole::Kernel => "kernel",
-            SkillRole::Methodology => "methodology",
-            SkillRole::Execution => "execution",
-            SkillRole::Support => "support",
-            SkillRole::Memory => "memory",
-            SkillRole::Design => "design",
-            SkillRole::Security => "security",
-            SkillRole::Dangerous => "dangerous",
-            SkillRole::LibraryOnly => "library-only",
-        };
-        out.push_str(&format!("  - {} ({}) [{}] [{}]\n", skill.name, source, role, status));
-    }
-    out
 }
 
 // ---------------------------------------------------------------------------
@@ -598,52 +541,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn detect_duplicates_finds_matching_purposes() {
-        let skills = vec![
-            make_skill("alpha", SkillSource::Custom, "do the thing", SkillStatus::Active),
-            make_skill("beta", SkillSource::Project, "do the thing", SkillStatus::Active),
-            make_skill("gamma", SkillSource::Superpower, "something else", SkillStatus::Active),
-        ];
-
-        let dups = detect_duplicates(&skills);
-        assert_eq!(dups.len(), 1);
-        assert_eq!(dups[0], ("alpha".to_string(), "beta".to_string()));
-    }
-
-    #[test]
-    fn detect_duplicates_empty_purpose_ignored() {
-        let skills = vec![
-            make_skill("a", SkillSource::Custom, "", SkillStatus::Active),
-            make_skill("b", SkillSource::Custom, "", SkillStatus::Active),
-        ];
-        let dups = detect_duplicates(&skills);
-        assert!(dups.is_empty(), "empty purposes should not count as duplicates");
-    }
-
-    #[test]
-    fn format_registry_produces_nonempty_output() {
-        let skills = vec![make_skill("my-skill", SkillSource::Project, "does stuff", SkillStatus::Active)];
-        let out = format_registry(&skills);
-        assert!(!out.is_empty());
-        assert!(out.contains("my-skill"));
-        assert!(out.contains("project"));
-        assert!(out.contains("active"));
-        assert!(out.contains("1 registered"));
-    }
-
-    #[test]
-    fn format_registry_zero_skills() {
-        let out = format_registry(&[]);
-        assert!(out.contains("0 registered"));
-    }
-
-    #[test]
-    fn format_registry_shows_role() {
-        let skills = vec![make_skill("superpower-foo", SkillSource::Superpower, "methodology skill", SkillStatus::Active)];
-        let out = format_registry(&skills);
-        assert!(out.contains("methodology"), "format_registry should show role");
-    }
+    // (detect_duplicates and format_registry were removed in v0.22 — both were
+    // dead in runtime, only exercised by the tests above. The live skill
+    // report path uses build_skill_report + format_skill_report +
+    // write_skill_inventory instead.)
 
     #[test]
     fn classify_role_kernel_by_name() {

@@ -1,6 +1,26 @@
 # AKAR Runtime — Master Roadmap v1.0 Revised
 
-**Status:** Revised source of truth  
+> **SUPERSEDED — read this notice first.**
+>
+> This roadmap is a **historical aspirational document**. It describes an
+> execution-capable autonomy runtime (A5/A6 full autopilot, a mission compiler
+> that executes code, model/gateway routing, circuit breakers, dependency
+> governor, migration safety, L6 self-optimization, L7 self-evolving OS) that
+> was **never built** and is **explicitly forbidden** by the v1 architecture
+> freeze (`docs/architecture/AKAR_V1_ARCHITECTURE_FREEZE_PROPOSAL.md`).
+>
+> The code does not follow this roadmap. It follows the freeze: a local,
+> advisory-only CLI that classifies, reports, records, and suggests — with no
+> code execution, no model API calls, no daemon, no auto-apply. See
+> `docs/audits/AKAR_V0_21_CURRENT_REALITY_AUDIT.md` for the authoritative
+> reality and `docs/audits/AKAR_V0_22_HONEST_EDGES_REPORT.md` for the cleanup.
+>
+> **Treat nothing in this document as a commitment.** Future sessions must not
+> infer from it that they are authorized to build the execution engine, model
+> routing, or autonomy modes the freeze forbids. The freeze and the v0.21
+> audit are the source of truth; this document is retained for history only.
+
+**Status:** SUPERSEDED by the v1 architecture freeze and the v0.21 current-reality audit. Retained as historical context only.  
 **Purpose:** Build a lightweight, model-agnostic, self-healing AI engineering runtime for Claude Code.  
 **Target environment:** Claude Code on any IDE, any supported gateway, any selected model.  
 **Primary user pattern:** User may not know coding or prompting deeply, may use full autonomy / dangerous mode, and expects end-to-end completion without babysitting.  

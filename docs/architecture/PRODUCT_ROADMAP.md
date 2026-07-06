@@ -1,5 +1,14 @@
 # AKAR Product Roadmap
 
+> **SUPERSEDED.** This roadmap is a historical document. The "Current" version
+> tag below is stale (AKAR is at v0.22.0), and the version-progression items
+> describe an execution-capable runtime that was never built. The authoritative
+> scope is the v1 architecture freeze
+> (`AKAR_V1_ARCHITECTURE_FREEZE_PROPOSAL.md`) and the v0.21 current-reality
+> audit (`docs/audits/AKAR_V0_21_CURRENT_REALITY_AUDIT.md`). AKAR is a local,
+> advisory-only CLI; it does not execute tasks, edit files, call models, or run
+> missions. Treat the progression below as history, not commitment.
+
 ## Version Progression
 
 ### v0.1.0 — Foundation CLI (Done)

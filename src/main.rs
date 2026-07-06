@@ -813,14 +813,17 @@ fn cmd_request(used: Option<u64>, limit: Option<u64>, prompt: Option<String>) {
     let signals = request_intelligence::RequestSignals { used, limit, prompt };
     let advisory = request_intelligence::build_advisory(&cfg, &signals);
     print!("{}", request_intelligence::format_advisory(&advisory));
-    if advisory.next_run_recommended {
-        if let Some(path) = request_intelligence::write_next_run(&cfg, "resume from last mission") {
-            println!("  wrote: {}", path.display());
-        }
-    }
 
     // Knowledge-driven loop governor: surface the next safe loop action and
     // write a governor-aware NEXT_RUN.md. Advisory only — never executes.
+    //
+    // `akar request` writes `.akar/NEXT_RUN.md` exactly once, through the
+    // compiled 11-section prompt writer (`write_governor_next_run`). The
+    // older resume-mode `write_next_run` writer is intentionally NOT called
+    // here: it was shadowed by this unconditional overwrite (v0.21 audit
+    // §7c.3), so its "never overwrite" guard was moot and its output was
+    // always discarded. `akar request --check` is read-only and does not
+    // write; `akar governor` does not write NEXT_RUN.md.
     let governor = loop_governor::decide(&cfg);
     println!();
     print!("{}", loop_governor::format_loop_governor(&governor));

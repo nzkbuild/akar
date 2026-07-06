@@ -5,9 +5,7 @@
 //! - postmortem outcome
 //! - manually supplied used/limit counts (optional)
 
-#[allow(unused_imports)]
-use std::path::Path;
-use crate::{config, event_log, postmortem};
+use crate::{config, postmortem};
 
 // ---------------------------------------------------------------------------
 // Pressure modes
@@ -43,7 +41,6 @@ pub struct RequestAdvisory {
     pub reason: String,
     pub strategy: Vec<String>,
     pub next_action: String,
-    pub next_run_recommended: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -86,9 +83,8 @@ pub fn build_advisory(cfg: &config::Config, signals: &RequestSignals) -> Request
     let reason = build_reason(signals, event_count, outcome, has_failures, has_patches);
     let strategy = strategy_for_mode(&mode);
     let next_action = next_action_for_mode(&mode, outcome);
-    let next_run_recommended = matches!(mode, PressureMode::Resume);
 
-    RequestAdvisory { mode, reason, strategy, next_action, next_run_recommended }
+    RequestAdvisory { mode, reason, strategy, next_action }
 }
 
 fn determine_mode(
@@ -161,8 +157,8 @@ fn strategy_for_mode(mode: &PressureMode) -> Vec<String> {
             "write checkpoint before stopping".to_string(),
         ],
         PressureMode::Resume => vec![
-            "write NEXT_RUN.md with continuation prompt".to_string(),
-            "stop at safe checkpoint".to_string(),
+            "stop at a safe checkpoint before the request limit".to_string(),
+            "hand off via `akar request` (writes .akar/NEXT_RUN.md)".to_string(),
             "do not start any new work".to_string(),
         ],
     }
@@ -180,48 +176,8 @@ fn next_action_for_mode(mode: &PressureMode, outcome: &postmortem::Outcome) -> S
             }
         }
         PressureMode::Boundary => "complete current step, run 'akar verify', then stop".to_string(),
-        PressureMode::Resume   => "write .akar/NEXT_RUN.md and stop cleanly".to_string(),
+        PressureMode::Resume   => "run `akar request` to write .akar/NEXT_RUN.md, then stop cleanly".to_string(),
     }
-}
-
-// ---------------------------------------------------------------------------
-// NEXT_RUN.md proposal
-// ---------------------------------------------------------------------------
-
-/// Write a NEXT_RUN.md continuation file if mode is Resume and file doesn't exist.
-/// Never overwrites existing file. Returns path written or None.
-pub fn write_next_run(cfg: &config::Config, continuation_prompt: &str) -> Option<std::path::PathBuf> {
-    if !cfg.akar_dir.exists() {
-        return None;
-    }
-    let path = cfg.akar_dir.join("NEXT_RUN.md");
-    if path.exists() {
-        return None; // preserve existing
-    }
-    let ts = event_log::now_iso8601();
-    let prompt_preview = config::redact(
-        &continuation_prompt.chars().take(200).collect::<String>()
-    );
-    let content = format!(
-        "# NEXT_RUN — Continuation State\n\
-        generated: {ts}\n\
-        project: {project}\n\n\
-        ## Last Known State\n\
-        - See `.akar/EVENT_LOG.jsonl` for recent events\n\
-        - See `.akar/LEARNING_PATCHES.md` for open patches\n\n\
-        ## Recommended Next Command\n\
-        ```\n\
-        akar mission \"{prompt}\"\n\
-        ```\n\n\
-        ## Notes\n\
-        - Run `akar doctor` first if any issues are suspected\n\
-        - Run `akar eval` to verify baseline before continuing\n",
-        ts = ts,
-        project = cfg.project_name,
-        prompt = prompt_preview,
-    );
-    std::fs::write(&path, content).ok()?;
-    Some(path)
 }
 
 // ---------------------------------------------------------------------------
@@ -237,9 +193,6 @@ pub fn format_advisory(advisory: &RequestAdvisory) -> String {
         out.push_str(&format!("    - {}\n", s));
     }
     out.push_str(&format!("  next:    {}\n", advisory.next_action));
-    if advisory.next_run_recommended {
-        out.push_str("  hint: run 'akar request' after writing .akar/NEXT_RUN.md\n");
-    }
     out
 }
 
@@ -308,7 +261,8 @@ mod tests {
         let signals = RequestSignals { used: Some(950), limit: Some(1000), prompt: None };
         let advisory = build_advisory(&cfg, &signals);
         assert_eq!(advisory.mode, PressureMode::Resume);
-        assert!(advisory.next_run_recommended);
+        // Resume pressure must surface a stop-and-hand-off strategy.
+        assert!(advisory.strategy.iter().any(|s| s.contains("akar request")));
     }
 
     #[test]
@@ -337,7 +291,7 @@ mod tests {
             limit: None,
             prompt: Some("token=sk-abc123secret fix the bug".to_string()),
         };
-        // Redaction is applied in write_next_run — test the redact fn directly
+        // Redaction is applied by config::redact (used by the NEXT_RUN writer).
         let preview = config::redact("token=sk-abc123secret fix the bug");
         assert!(!preview.contains("sk-abc123"));
         assert!(preview.contains("[REDACTED]"));

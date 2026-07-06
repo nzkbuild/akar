@@ -207,22 +207,28 @@ fn extract_json_num(s: &str, key: &str) -> Option<usize> {
 // ---------------------------------------------------------------------------
 
 /// Maps a user-supplied task name to a (files_max, loc_max, canonical_name) triple.
-/// Uses existing contract.rs budget tiers — no second budget table.
+///
+/// Budget caps come from the **single source of truth** in `contract.rs`
+/// (`BUDGET_CAP_*`). There is no second hardcoded budget table here — the
+/// v0.21 audit (§7c.1) flagged the previous duplicate table as a drift risk.
+/// CLI task names that have no direct `TaskType` variant (`docs`, `test`,
+/// `config`, `unknown`) are mapped to the closest-fitting tier.
 ///
 /// Returns `Err(String)` with valid options when the name is not recognised.
 pub fn budget_for_task_name(task: &str) -> Result<(usize, usize, &'static str), String> {
+    use crate::contract::{BUDGET_CAP_LARGE, BUDGET_CAP_MEDIUM, BUDGET_CAP_MICRO, BUDGET_CAP_SMALL};
     match task.to_lowercase().as_str() {
-        "bugfix" | "bug" | "fix"  => Ok((3,   60,   "Bugfix")),
-        "feature" | "feat"        => Ok((12,  600,  "Feature")),
-        "refactor"                => Ok((12,  600,  "Refactor")),
-        "security" | "sec"        => Ok((5,   200,  "Security")),
-        "migration" | "migrate"   => Ok((30,  2000, "Migration")),
-        "dependency" | "dep"      => Ok((5,   200,  "Dependency")),
-        "frontend" | "ui"         => Ok((12,  600,  "Frontend")),
-        "docs" | "doc"            => Ok((5,   200,  "Docs")),
-        "test" | "tests"          => Ok((5,   200,  "Test")),
-        "config"                  => Ok((3,   60,   "Config")),
-        "unknown"                 => Ok((12,  600,  "Unknown")),
+        "bugfix" | "bug" | "fix"  => Ok((BUDGET_CAP_MICRO.0,  BUDGET_CAP_MICRO.1,  "Bugfix")),
+        "config"                  => Ok((BUDGET_CAP_MICRO.0,  BUDGET_CAP_MICRO.1,  "Config")),
+        "security" | "sec"        => Ok((BUDGET_CAP_SMALL.0,  BUDGET_CAP_SMALL.1,  "Security")),
+        "dependency" | "dep"      => Ok((BUDGET_CAP_SMALL.0,  BUDGET_CAP_SMALL.1,  "Dependency")),
+        "docs" | "doc"            => Ok((BUDGET_CAP_SMALL.0,  BUDGET_CAP_SMALL.1,  "Docs")),
+        "test" | "tests"          => Ok((BUDGET_CAP_SMALL.0,  BUDGET_CAP_SMALL.1,  "Test")),
+        "feature" | "feat"        => Ok((BUDGET_CAP_MEDIUM.0, BUDGET_CAP_MEDIUM.1, "Feature")),
+        "refactor"                => Ok((BUDGET_CAP_MEDIUM.0, BUDGET_CAP_MEDIUM.1, "Refactor")),
+        "frontend" | "ui"         => Ok((BUDGET_CAP_MEDIUM.0, BUDGET_CAP_MEDIUM.1, "Frontend")),
+        "unknown"                 => Ok((BUDGET_CAP_MEDIUM.0, BUDGET_CAP_MEDIUM.1, "Unknown")),
+        "migration" | "migrate"   => Ok((BUDGET_CAP_LARGE.0,  BUDGET_CAP_LARGE.1,  "Migration")),
         _ => Err(format!(
             "unknown task type '{}'. Valid values: bugfix, feature, refactor, security, \
              migration, dependency, frontend, docs, test, config, unknown",
@@ -282,17 +288,6 @@ pub enum BudgetVerdict {
     Pass,
     Exceeded { reason: String },
     Unknown { reason: String },
-}
-
-impl BudgetVerdict {
-    #[allow(dead_code)]
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            BudgetVerdict::Pass => "PASS",
-            BudgetVerdict::Exceeded { .. } => "EXCEEDED",
-            BudgetVerdict::Unknown { .. } => "UNKNOWN",
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

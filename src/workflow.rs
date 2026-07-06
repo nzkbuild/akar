@@ -104,7 +104,12 @@ pub fn format_workflow_report(report: &WorkflowReport) -> String {
         "PARTIAL"
     };
 
-    out.push_str("advisory scaffold mode — AKAR does not execute fixes or edit project files\n");
+    out.push_str("ADVISORY ONLY — `akar run` prints strategy and records telemetry. It does NOT:\n");
+    out.push_str("  - execute code\n");
+    out.push_str("  - edit files\n");
+    out.push_str("  - call models\n");
+    out.push_str("  - run the mission\n");
+    out.push_str("Run the task yourself in Claude Code. For a Claude-ready next-run prompt, use `akar request`.\n");
     out.push_str("\n");
     out.push_str(&format!("run: {}\n", overall));
     out.push_str(&format!("  prompt:     {}\n", report.prompt));
@@ -239,6 +244,9 @@ mod tests {
         assert!(out.contains("preflight:"));
         assert!(out.contains("mission:"));
         assert!(out.contains("not done by AKAR:"));
-        assert!(out.contains("advisory scaffold mode"));
+        assert!(out.contains("ADVISORY ONLY"));
+        assert!(out.contains("does NOT"));
+        assert!(out.contains("- run the mission"));
+        assert!(out.contains("akar request"));
     }
 }

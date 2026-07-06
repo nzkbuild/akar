@@ -237,6 +237,17 @@ fn write_telemetry_event(m: &Mission, cfg: &config::Config) {
 pub fn format_mission_report(mission: &Mission) -> String {
     let mut out = String::new();
 
+    // Lead with an unmistakable advisory banner. `akar mission` walks the
+    // state machine in scaffold mode only — it records a telemetry event and
+    // prints strategy, but never executes the task. See v0.22 audit.
+    out.push_str("ADVISORY ONLY — `akar mission` walks the state machine in scaffold mode. It does NOT:\n");
+    out.push_str("  - execute code\n");
+    out.push_str("  - edit files\n");
+    out.push_str("  - call models\n");
+    out.push_str("  - run the mission\n");
+    out.push_str("For a Claude-ready next-run prompt, use `akar request`.\n");
+    out.push_str("\n");
+
     // Header line
     let header = match mission.state {
         MissionState::Done => "Done.",
@@ -343,6 +354,9 @@ mod tests {
         let report = format_mission_report(&m);
 
         assert!(report.contains("Done."), "report should start with Done.");
+        assert!(report.starts_with("ADVISORY ONLY"), "mission report must lead with advisory banner");
+        assert!(report.contains("- run the mission"), "banner must state it does not run the mission");
+        assert!(report.contains("akar request"), "banner must point to akar request");
         assert!(report.contains("Mission:"), "report should contain Mission: section");
         assert!(report.contains("Context:"), "report should contain Context: section");
         assert!(report.contains("Verified:"), "report should contain Verified: section");
@@ -389,6 +403,8 @@ mod tests {
         m.state = MissionState::Failed;
         m.prompt = "some prompt".to_string();
         let report = format_mission_report(&m);
-        assert!(report.starts_with("Failed."), "report should start with Failed.");
+        // The advisory banner leads, then the state header.
+        assert!(report.contains("Failed."), "report should contain Failed. header");
+        assert!(report.starts_with("ADVISORY ONLY"), "report should lead with advisory banner");
     }
 }

@@ -338,7 +338,10 @@ pub fn run_evals(cfg: &config::Config) -> EvalSuite {
         results.push(eval("backup_restore_cycle", ok, &detail));
     }
 
-    // ---- Dependency governor eval ---------------------------------------------
+    // ---- Dependency policy-library eval (not a runtime governor) -------------
+    // Exercises safety::govern_dependency, a pure policy function reachable
+    // only from this eval and unit tests. AKAR has no runtime dependency
+    // governor; this keeps the approval policy tested.
 
     // 19. dependency_govern_critical
     {
@@ -352,11 +355,13 @@ pub fn run_evals(cfg: &config::Config) -> EvalSuite {
         results.push(eval(
             "dependency_govern_critical",
             passed,
-            &format!("approved={} msg={}", approved, msg),
+            &format!("policy-check approved={} msg={}", approved, msg),
         ));
     }
 
-    // ---- Migration safety eval ------------------------------------------------
+    // ---- Migration policy-library eval (not a runtime governor) --------------
+    // Exercises safety::check_migration, a pure policy function reachable only
+    // from this eval and unit tests. AKAR has no runtime migration governor.
 
     // 20. migration_no_rollback
     {
@@ -370,7 +375,7 @@ pub fn run_evals(cfg: &config::Config) -> EvalSuite {
         results.push(eval(
             "migration_no_rollback",
             passed,
-            &format!("safe={} msg={}", safe, msg),
+            &format!("policy-check safe={} msg={}", safe, msg),
         ));
     }
 

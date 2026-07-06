@@ -68,6 +68,20 @@ pub enum Confidence {
 // DiffBudget
 // ---------------------------------------------------------------------------
 
+/// The four diff-budget tiers' `(files_max, loc_max)` caps.
+///
+/// These are the **single source of truth** for budget cap numbers. Both the
+/// contract classifier (`DiffBudget::micro/small/medium/large`) and the
+/// user-facing task-name resolver (`diff_budget::budget_for_task_name`) read
+/// from these constants so the two paths cannot silently diverge. The v0.21
+/// audit (§7c.1) found a second hardcoded table in `diff_budget.rs` despite a
+/// "no second budget table" comment; centralizing the caps here makes that
+/// comment true.
+pub const BUDGET_CAP_MICRO: (usize, usize) = (3, 60);
+pub const BUDGET_CAP_SMALL: (usize, usize) = (5, 200);
+pub const BUDGET_CAP_MEDIUM: (usize, usize) = (12, 600);
+pub const BUDGET_CAP_LARGE: (usize, usize) = (30, 2000);
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct DiffBudget {
     pub files_min: usize,
@@ -82,11 +96,12 @@ pub struct DiffBudget {
 impl DiffBudget {
     /// Micro budget — tiny targeted fixes (e.g. bugfix).
     fn micro() -> Self {
+        let (files_max, loc_max) = BUDGET_CAP_MICRO;
         DiffBudget {
             files_min: 1,
-            files_max: 3,
+            files_max,
             loc_min: 5,
-            loc_max: 60,
+            loc_max,
             new_files_allowed: false,
             dependencies_allowed: false,
             migrations_allowed: false,
@@ -95,11 +110,12 @@ impl DiffBudget {
 
     /// Small budget — focused changes touching a handful of files.
     fn small() -> Self {
+        let (files_max, loc_max) = BUDGET_CAP_SMALL;
         DiffBudget {
             files_min: 1,
-            files_max: 5,
+            files_max,
             loc_min: 10,
-            loc_max: 200,
+            loc_max,
             new_files_allowed: false,
             dependencies_allowed: false,
             migrations_allowed: false,
@@ -108,11 +124,12 @@ impl DiffBudget {
 
     /// Medium budget — moderate feature or refactor work.
     fn medium() -> Self {
+        let (files_max, loc_max) = BUDGET_CAP_MEDIUM;
         DiffBudget {
             files_min: 2,
-            files_max: 12,
+            files_max,
             loc_min: 30,
-            loc_max: 600,
+            loc_max,
             new_files_allowed: true,
             dependencies_allowed: false,
             migrations_allowed: false,
@@ -121,11 +138,12 @@ impl DiffBudget {
 
     /// Large budget — significant cross-cutting work.
     fn large() -> Self {
+        let (files_max, loc_max) = BUDGET_CAP_LARGE;
         DiffBudget {
             files_min: 3,
-            files_max: 30,
+            files_max,
             loc_min: 50,
-            loc_max: 2000,
+            loc_max,
             new_files_allowed: true,
             dependencies_allowed: true,
             migrations_allowed: true,
