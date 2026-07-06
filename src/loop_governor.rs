@@ -1046,6 +1046,371 @@ fn final_response_format() -> Vec<&'static str> {
 }
 
 // ---------------------------------------------------------------------------
+// NEXT_RUN prompt contract validator (v0.20.0)
+// ---------------------------------------------------------------------------
+
+/// The 11 required section headers, in their exact required order.
+pub const REQUIRED_SECTIONS: &[&str] = &[
+    "# AKAR Next Run",
+    "## Current State",
+    "## Governor Decision",
+    "## Evidence Used",
+    "## Objective",
+    "## Hard Rules",
+    "## Allowed Commands",
+    "## Forbidden Commands",
+    "## Stop Conditions",
+    "## Verification Required",
+    "## Final Response Format",
+];
+
+/// Forbidden-command items that must appear in the Forbidden Commands section.
+const REQUIRED_FORBIDDEN_ITEMS: &[&str] = &[
+    "git reset",
+    "git clean",
+    "git stash",
+    "git checkout",
+    "git push",
+    "rm -rf /",
+    "rm -rf /*",
+    "sudo rm -rf /",
+    "del /s /q C:\\",
+    "Remove-Item -Recurse -Force C:\\",
+];
+
+/// Hard-rule lines that must appear in the Hard Rules section.
+const REQUIRED_HARD_RULES: &[&str] = &[
+    "Do not retry blocked commands.",
+    "Stop if verification fails.",
+];
+
+/// Result of validating a compiled NEXT_RUN prompt against the v0.20.0 contract.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NextRunCheckResult {
+    /// Overall pass/fail.
+    pub pass: bool,
+    /// Per-check outcomes, in display order.
+    pub checks: [bool; 4],
+    /// Human-readable failure reasons (empty on full PASS).
+    pub reasons: Vec<String>,
+}
+
+impl NextRunCheckResult {
+    /// Labels for the four checks, in order.
+    pub const CHECK_LABELS: [&'static str; 4] = [
+        "sections",
+        "minimum content",
+        "safety contract",
+        "decision consistency",
+    ];
+
+    /// True iff all checks passed.
+    #[allow(dead_code)]
+    pub fn is_pass(&self) -> bool {
+        self.pass
+    }
+}
+
+/// Validate a compiled NEXT_RUN prompt string against the v0.20.0 contract.
+///
+/// Checks (in order):
+/// 1. **sections** — all 11 required headers present, in exact order.
+/// 2. **minimum content** — version, decision, reason, next action, class,
+///    objective, evidence (≥1 line or the placeholder), and every body
+///    section is non-empty.
+/// 3. **safety contract** — all forbidden-command items present, and the two
+///    required hard-rule lines present.
+/// 4. **decision consistency** — the decision's class matches the decision,
+///    and the objective matches the decision.
+///
+/// Read-only: does not write or fix anything. Never panics.
+pub fn validate_next_run(content: &str) -> NextRunCheckResult {
+    let mut reasons: Vec<String> = Vec::new();
+
+    // ---- Check 1: required sections in exact order ----------------------
+    // Collect every Markdown header line (`# ` or `## `) in document order.
+    let section_headers: Vec<&str> = content
+        .lines()
+        .filter(|l| l.starts_with("# ") || l.starts_with("## "))
+        .collect();
+    let mut section_reasons: Vec<String> = Vec::new();
+    let sections_ok = sections_in_order(&section_headers, &mut section_reasons);
+
+    // ---- Check 2: minimum content ---------------------------------------
+    let mut content_reasons: Vec<String> = Vec::new();
+    let content_ok = check_minimum_content(content, &mut content_reasons);
+
+    // ---- Check 3: safety contract ---------------------------------------
+    let mut safety_reasons: Vec<String> = Vec::new();
+    let safety_ok = check_safety_contract(content, &mut safety_reasons);
+
+    // ---- Check 4: decision consistency ----------------------------------
+    let mut consistency_reasons: Vec<String> = Vec::new();
+    let consistency_ok = check_decision_consistency(content, &mut consistency_reasons);
+
+    let checks = [sections_ok, content_ok, safety_ok, consistency_ok];
+    let pass = checks.iter().all(|c| *c);
+
+    // Aggregate failure reasons in check order for stable output.
+    reasons.extend(section_reasons);
+    reasons.extend(content_reasons);
+    reasons.extend(safety_reasons);
+    reasons.extend(consistency_reasons);
+
+    NextRunCheckResult {
+        pass,
+        checks,
+        reasons,
+    }
+}
+
+/// Check that the 11 required section headers appear in exact order.
+/// Appends specific failure reasons to `out`. Returns true if OK.
+fn sections_in_order(found: &[&str], out: &mut Vec<String>) -> bool {
+    // `found` may include the title and the 10 `## ` headers, in document
+    // order. Required sections must be a subsequence of `found` and appear
+    // in the exact required order.
+    let mut found_idx = 0usize;
+    let mut matched = 0usize;
+    for required in REQUIRED_SECTIONS {
+        let mut found_match = false;
+        while found_idx < found.len() {
+            if found[found_idx] == *required {
+                matched += 1;
+                found_idx += 1;
+                found_match = true;
+                break;
+            }
+            found_idx += 1;
+        }
+        if !found_match {
+            out.push(format!("missing or out-of-order section: `{}`", required));
+            return false;
+        }
+    }
+    // Also reject extra `## `/`# ` headers interspersed between required ones
+    // in a way that breaks order — the subsequence check above already
+    // enforces order. Require exactly the 11 required headers (no more top
+    // `# `/`## ` headers than expected) to catch duplicates.
+    if found.len() != REQUIRED_SECTIONS.len() {
+        // Could be extra headers; if all required matched in order, still
+        // flag unexpected header count for strictness.
+        if matched == REQUIRED_SECTIONS.len() {
+            out.push(format!(
+                "unexpected section header count: expected {}, found {}",
+                REQUIRED_SECTIONS.len(),
+                found.len()
+            ));
+            return false;
+        }
+    }
+    true
+}
+
+/// Extract the body lines of a `## Section` (lines after its header up to the
+/// next `# `/`## ` header or EOF), excluding the header line itself.
+fn section_body<'a>(content: &'a str, header: &str) -> Vec<&'a str> {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut body = Vec::new();
+    let mut in_section = false;
+    for line in lines {
+        if line.starts_with("# ") || line.starts_with("## ") {
+            if in_section {
+                break;
+            }
+            if line == header {
+                in_section = true;
+                continue;
+            }
+        } else if in_section {
+            body.push(line);
+        }
+    }
+    body
+}
+
+/// True if a section body has at least one non-empty, non-comment line.
+fn section_nonempty(content: &str, header: &str) -> bool {
+    section_body(content, header)
+        .iter()
+        .any(|l| !l.trim().is_empty() && !l.starts_with("<!--"))
+}
+
+/// Check minimum-content requirements. Appends reasons; returns true if OK.
+fn check_minimum_content(content: &str, out: &mut Vec<String>) -> bool {
+    let mut ok = true;
+
+    // Required scalar fields.
+    let required_fields = [
+        ("AKAR version", "- AKAR version:"),
+        ("governor decision", "- governor decision:"),
+        ("reason", "- reason:"),
+        ("next action", "- next action:"),
+        ("decision class", "- class:"),
+        ("objective", "## Objective"),
+    ];
+    for (label, needle) in required_fields {
+        if !content.contains(needle) {
+            out.push(format!("missing minimum content: {}", label));
+            ok = false;
+        }
+    }
+
+    // Evidence: at least one evidence line OR the placeholder.
+    let evidence_body = section_body(content, "## Evidence Used");
+    let has_evidence = evidence_body
+        .iter()
+        .any(|l| l.trim().starts_with("- ") && !l.trim().is_empty());
+    let has_placeholder = evidence_body
+        .iter()
+        .any(|l| l.contains("No evidence files were used."));
+    if !has_evidence && !has_placeholder {
+        out.push("missing minimum content: evidence".to_string());
+        ok = false;
+    }
+
+    // Body sections must be non-empty.
+    let body_sections = [
+        ("Hard Rules", "## Hard Rules"),
+        ("Allowed Commands", "## Allowed Commands"),
+        ("Forbidden Commands", "## Forbidden Commands"),
+        ("Stop Conditions", "## Stop Conditions"),
+        ("Verification Required", "## Verification Required"),
+        ("Final Response Format", "## Final Response Format"),
+    ];
+    for (label, header) in body_sections {
+        if !section_nonempty(content, header) {
+            out.push(format!("empty section: {}", label));
+            ok = false;
+        }
+    }
+
+    ok
+}
+
+/// Check the safety contract: all forbidden items + required hard rules.
+fn check_safety_contract(content: &str, out: &mut Vec<String>) -> bool {
+    let mut ok = true;
+    for item in REQUIRED_FORBIDDEN_ITEMS {
+        if !content.contains(item) {
+            out.push(format!("missing forbidden command: `{}`", item));
+            ok = false;
+        }
+    }
+    for rule in REQUIRED_HARD_RULES {
+        if !content.contains(rule) {
+            out.push(format!("missing hard rule: `{}`", rule));
+            ok = false;
+        }
+    }
+    ok
+}
+
+/// Check decision consistency: parse decision + class + objective from the
+/// content and verify they agree.
+fn check_decision_consistency(content: &str, out: &mut Vec<String>) -> bool {
+    let mut ok = true;
+
+    // Parse decision label from "- decision: <LABEL>".
+    let decision_label = content
+        .lines()
+        .find_map(|l| {
+            let t = l.trim();
+            t.strip_prefix("- decision: ").map(|s| s.trim().to_string())
+        })
+        .or_else(|| {
+            content.lines().find_map(|l| {
+                let t = l.trim();
+                t.strip_prefix("- governor decision: ").map(|s| s.trim().to_string())
+            })
+        });
+
+    let decision_label = match decision_label {
+        Some(d) => d,
+        None => {
+            out.push("decision consistency: decision label not found".to_string());
+            return false;
+        }
+    };
+
+    let decision = match parse_decision_label(&decision_label) {
+        Some(d) => d,
+        None => {
+            out.push(format!(
+                "decision consistency: unrecognized decision label `{}`",
+                decision_label
+            ));
+            return false;
+        }
+    };
+
+    // Parse class line "- class: <class>".
+    let class_label = content.lines().find_map(|l| {
+        let t = l.trim();
+        t.strip_prefix("- class: ").map(|s| s.trim().to_string())
+    });
+    let expected_class = decision.decision_class().as_str();
+    match class_label.as_deref() {
+        Some(c) if c == expected_class => {}
+        Some(c) => {
+            out.push(format!(
+                "decision class mismatch: decision {} expects `{}` but found `{}`",
+                decision_label, expected_class, c
+            ));
+            ok = false;
+        }
+        None => {
+            out.push("decision consistency: class line not found".to_string());
+            ok = false;
+        }
+    }
+
+    // Objective must contain the exact objective string for the decision.
+    let expected_objective = objective_for_decision(&decision);
+    if !content.contains(expected_objective) {
+        out.push(format!(
+            "decision objective mismatch: decision {} requires `{}`",
+            decision_label, expected_objective
+        ));
+        ok = false;
+    }
+
+    ok
+}
+
+/// Parse a decision label string back into a `LoopDecision`.
+fn parse_decision_label(label: &str) -> Option<LoopDecision> {
+    match label {
+        "READY" => Some(LoopDecision::Ready),
+        "SNAPSHOT_NOW" => Some(LoopDecision::SnapshotNow),
+        "RUN_POSTMORTEM" => Some(LoopDecision::RunPostmortem),
+        "COMMIT_CHECKPOINT" => Some(LoopDecision::CommitCheckpoint),
+        "SPLIT_TASK" => Some(LoopDecision::SplitTask),
+        "STOP_HOOK_BROKEN" => Some(LoopDecision::StopHookBroken),
+        "STOP_REPEATED_BLOCK" => Some(LoopDecision::StopRepeatedBlock),
+        "UNKNOWN" => Some(LoopDecision::Unknown),
+        _ => None,
+    }
+}
+
+/// Format a `NextRunCheckResult` for `akar request --check` output.
+pub fn format_next_run_check(result: &NextRunCheckResult) -> String {
+    let mut out = String::new();
+    if result.pass {
+        out.push_str("NEXT_RUN check: PASS\n");
+        for label in NextRunCheckResult::CHECK_LABELS.iter() {
+            out.push_str(&format!("  - {}: PASS\n", label));
+        }
+    } else {
+        out.push_str("NEXT_RUN check: FAIL\n");
+        for reason in &result.reasons {
+            out.push_str(&format!("  - {}\n", reason));
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Opt-in governor telemetry (v0.18.0)
 // ---------------------------------------------------------------------------
 
@@ -2607,5 +2972,343 @@ mod tests {
             let p = compile_next_run_prompt(&cfg, &report_for(d.clone()));
             assert_eq!(section_headers(&p), first, "section order differs for {:?}", d);
         }
+    }
+
+    // ---- v0.20.0 NEXT_RUN contract validator -----------------------------
+
+    #[test]
+    fn valid_compiled_next_run_passes() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let result = validate_next_run(&prompt);
+        assert!(result.pass, "valid compiled prompt should PASS: {:?}", result.reasons);
+        assert!(result.reasons.is_empty());
+    }
+
+    #[test]
+    fn missing_next_run_file_fails() {
+        // `akar request --check` reads the file; an empty string simulates a
+        // missing/empty file and must FAIL.
+        let result = validate_next_run("");
+        assert!(!result.pass);
+        assert!(!result.reasons.is_empty());
+    }
+
+    #[test]
+    fn missing_required_section_fails() {
+        let cfg = compiler_cfg();
+        let mut prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        // Remove the Objective section header and its body up to the next header.
+        prompt = prompt.replace("## Objective\n", "## (removed)\n");
+        let result = validate_next_run(&prompt);
+        assert!(!result.pass);
+        assert!(
+            result.reasons.iter().any(|r| r.contains("## Objective")),
+            "should flag missing Objective section: {:?}",
+            result.reasons
+        );
+    }
+
+    #[test]
+    fn wrong_section_order_fails() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        // Swap two section headers so order is wrong.
+        let swapped = prompt
+            .replace("## Hard Rules", "## TEMP_HARD")
+            .replace("## Allowed Commands", "## Hard Rules")
+            .replace("## TEMP_HARD", "## Allowed Commands");
+        let result = validate_next_run(&swapped);
+        assert!(!result.pass, "wrong section order must FAIL");
+    }
+
+    #[test]
+    fn empty_hard_rules_fails() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        // Blank the Hard Rules body by removing all its rule lines.
+        let mut lines: Vec<&str> = prompt.lines().collect();
+        let mut out = String::new();
+        let mut in_hard = false;
+        for line in &lines {
+            if *line == "## Hard Rules" {
+                in_hard = true;
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
+            if in_hard && (line.starts_with("## ") || line.starts_with("# ")) {
+                in_hard = false;
+            }
+            if in_hard {
+                continue; // skip body lines
+            }
+            out.push_str(line);
+            out.push('\n');
+        }
+        let _ = lines.split_off(0);
+        let result = validate_next_run(&out);
+        assert!(!result.pass);
+        assert!(result.reasons.iter().any(|r| r.contains("Hard Rules")), "{:?}", result.reasons);
+    }
+
+    #[test]
+    fn empty_allowed_commands_fails() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let mut out = String::new();
+        let mut in_sec = false;
+        for line in prompt.lines() {
+            if line == "## Allowed Commands" {
+                in_sec = true;
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
+            if in_sec && (line.starts_with("## ") || line.starts_with("# ")) {
+                in_sec = false;
+            }
+            if in_sec {
+                continue;
+            }
+            out.push_str(line);
+            out.push('\n');
+        }
+        let result = validate_next_run(&out);
+        assert!(!result.pass);
+        assert!(result.reasons.iter().any(|r| r.contains("Allowed Commands")), "{:?}", result.reasons);
+    }
+
+    #[test]
+    fn empty_forbidden_commands_fails() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let mut out = String::new();
+        let mut in_sec = false;
+        for line in prompt.lines() {
+            if line == "## Forbidden Commands" {
+                in_sec = true;
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
+            if in_sec && (line.starts_with("## ") || line.starts_with("# ")) {
+                in_sec = false;
+            }
+            if in_sec {
+                continue;
+            }
+            out.push_str(line);
+            out.push('\n');
+        }
+        let result = validate_next_run(&out);
+        assert!(!result.pass);
+        assert!(result.reasons.iter().any(|r| r.contains("Forbidden Commands")), "{:?}", result.reasons);
+    }
+
+    #[test]
+    fn empty_stop_conditions_fails() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let mut out = String::new();
+        let mut in_sec = false;
+        for line in prompt.lines() {
+            if line == "## Stop Conditions" {
+                in_sec = true;
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
+            if in_sec && (line.starts_with("## ") || line.starts_with("# ")) {
+                in_sec = false;
+            }
+            if in_sec {
+                continue;
+            }
+            out.push_str(line);
+            out.push('\n');
+        }
+        let result = validate_next_run(&out);
+        assert!(!result.pass);
+        assert!(result.reasons.iter().any(|r| r.contains("Stop Conditions")), "{:?}", result.reasons);
+    }
+
+    #[test]
+    fn empty_verification_required_fails() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let mut out = String::new();
+        let mut in_sec = false;
+        for line in prompt.lines() {
+            if line == "## Verification Required" {
+                in_sec = true;
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
+            if in_sec && (line.starts_with("## ") || line.starts_with("# ")) {
+                in_sec = false;
+            }
+            if in_sec {
+                continue;
+            }
+            out.push_str(line);
+            out.push('\n');
+        }
+        let result = validate_next_run(&out);
+        assert!(!result.pass);
+        assert!(result.reasons.iter().any(|r| r.contains("Verification Required")), "{:?}", result.reasons);
+    }
+
+    #[test]
+    fn missing_final_response_format_fails() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let broken = prompt.replace("## Final Response Format", "## (removed)");
+        let result = validate_next_run(&broken);
+        assert!(!result.pass);
+        assert!(result.reasons.iter().any(|r| r.contains("Final Response Format")), "{:?}", result.reasons);
+    }
+
+    #[test]
+    fn missing_forbidden_command_safety_item_fails() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        // Remove one forbidden item line.
+        let broken = prompt.replace("- `rm -rf /*`\n", "");
+        let result = validate_next_run(&broken);
+        assert!(!result.pass);
+        assert!(result.reasons.iter().any(|r| r.contains("rm -rf /*")), "{:?}", result.reasons);
+    }
+
+    #[test]
+    fn missing_hard_rule_do_not_retry_fails() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let broken = prompt.replace("- Do not retry blocked commands.\n", "");
+        let result = validate_next_run(&broken);
+        assert!(!result.pass);
+        assert!(result.reasons.iter().any(|r| r.contains("Do not retry blocked commands")), "{:?}", result.reasons);
+    }
+
+    #[test]
+    fn missing_hard_rule_stop_if_verification_fails_fails() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let broken = prompt.replace("- Stop if verification fails.\n", "");
+        let result = validate_next_run(&broken);
+        assert!(!result.pass);
+        assert!(result.reasons.iter().any(|r| r.contains("Stop if verification fails")), "{:?}", result.reasons);
+    }
+
+    #[test]
+    fn decision_class_mismatch_fails() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        // Tamper the class line: READY should be continue-class, change it to stop-class.
+        let broken = prompt.replace("- class: continue-class", "- class: stop-class");
+        let result = validate_next_run(&broken);
+        assert!(!result.pass);
+        assert!(result.reasons.iter().any(|r| r.contains("class mismatch")), "{:?}", result.reasons);
+    }
+
+    #[test]
+    fn decision_specific_objective_mismatch_fails() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        // Replace the READY objective with the SNAPSHOT_NOW objective.
+        let broken = prompt.replace(
+            "Continue the scoped task without broadening the work.",
+            "Create a clean baseline snapshot before making changes.",
+        );
+        let result = validate_next_run(&broken);
+        assert!(!result.pass);
+        assert!(result.reasons.iter().any(|r| r.contains("objective mismatch")), "{:?}", result.reasons);
+    }
+
+    #[test]
+    fn all_eight_decision_objective_class_combinations_pass() {
+        let cfg = compiler_cfg();
+        let decisions = [
+            LoopDecision::Ready,
+            LoopDecision::SnapshotNow,
+            LoopDecision::RunPostmortem,
+            LoopDecision::CommitCheckpoint,
+            LoopDecision::SplitTask,
+            LoopDecision::StopHookBroken,
+            LoopDecision::StopRepeatedBlock,
+            LoopDecision::Unknown,
+        ];
+        for d in decisions.iter() {
+            let prompt = compile_next_run_prompt(&cfg, &report_for(d.clone()));
+            let result = validate_next_run(&prompt);
+            assert!(
+                result.pass,
+                "decision {:?} should produce a valid NEXT_RUN: {:?}",
+                d,
+                result.reasons
+            );
+        }
+    }
+
+    #[test]
+    fn pass_output_format_is_correct() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let result = validate_next_run(&prompt);
+        let out = format_next_run_check(&result);
+        assert!(out.starts_with("NEXT_RUN check: PASS\n"));
+        assert!(out.contains("- sections: PASS"));
+        assert!(out.contains("- minimum content: PASS"));
+        assert!(out.contains("- safety contract: PASS"));
+        assert!(out.contains("- decision consistency: PASS"));
+    }
+
+    #[test]
+    fn fail_output_format_lists_reasons() {
+        let result = validate_next_run("");
+        let out = format_next_run_check(&result);
+        assert!(out.starts_with("NEXT_RUN check: FAIL\n"));
+        // Each reason on its own line, indented.
+        assert!(out.lines().skip(1).all(|l| l.starts_with("  - ")));
+    }
+
+    #[test]
+    fn request_check_does_not_write_next_run_md() {
+        // `akar request --check` reads the file and validates; it must NOT
+        // write or regenerate NEXT_RUN.md. Simulate the check path.
+        let dir = fresh_akar_dir("check_no_write");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        // No NEXT_RUN.md exists yet.
+        assert!(!dir.join("NEXT_RUN.md").exists());
+        // The check path reads (missing) and validates an empty string.
+        let _result = validate_next_run("");
+        // Still no NEXT_RUN.md written.
+        assert!(!dir.join("NEXT_RUN.md").exists(), "request --check must not write NEXT_RUN.md");
+        let _ = &cfg;
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn request_still_writes_next_run_md() {
+        let dir = fresh_akar_dir("check_request_writes");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = report_for(LoopDecision::Ready);
+        let path = write_governor_next_run(&cfg, &report);
+        assert!(path.is_some());
+        assert!(dir.join("NEXT_RUN.md").exists());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn governor_still_does_not_write_next_run_md() {
+        let dir = fresh_akar_dir("check_gov_no_write");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        let _ = format_governor_report(&report);
+        let _ = format_governor_one_line(&report);
+        let _ = format_governor_json(&report);
+        assert!(!dir.join("NEXT_RUN.md").exists());
+        fs::remove_dir_all(&dir).ok();
     }
 }

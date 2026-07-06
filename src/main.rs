@@ -143,6 +143,11 @@ fn main() {
             }
         }
         "request" => {
+            let check_mode = args.iter().any(|a| a == "--check");
+            if check_mode {
+                let code = cmd_request_check();
+                process::exit(code);
+            }
             let used = parse_flag_u64(&args, "--used");
             let limit = parse_flag_u64(&args, "--limit");
             let prompt = parse_flag_str(&args, "--prompt");
@@ -188,6 +193,7 @@ fn print_usage() {
     println!("  preflight <task>  Show mission strategy before executing a task");
     println!("  request           Show request pressure mode and strategy advisory");
     println!("  request --used N --limit M  Supply explicit request counts for pressure mode");
+    println!("  request --check   Validate .akar/NEXT_RUN.md (read-only; exit 0 on PASS, non-zero on FAIL)");
     println!();
     println!("FLAGS:");
     println!("  --version   Print version");
@@ -820,6 +826,34 @@ fn cmd_request(used: Option<u64>, limit: Option<u64>, prompt: Option<String>) {
     print!("{}", loop_governor::format_loop_governor(&governor));
     if let Some(path) = loop_governor::write_governor_next_run(&cfg, &governor) {
         println!("  wrote: {}", path.display());
+    }
+}
+
+/// `akar request --check` — read-only validator for `.akar/NEXT_RUN.md`.
+///
+/// Reads the compiled next-run prompt and validates it against the v0.20.0
+/// contract (sections, minimum content, safety contract, decision
+/// consistency). Prints PASS/FAIL. Does not write, regenerate, or auto-fix
+/// anything. Returns 0 on PASS, non-zero on FAIL (or when the file is
+/// missing).
+fn cmd_request_check() -> i32 {
+    let cfg = config::Config::discover();
+    let path = cfg.akar_dir.join("NEXT_RUN.md");
+    let content = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(_) => {
+            println!("NEXT_RUN check: FAIL");
+            println!("  - file not found: {}", path.display());
+            println!("    hint: run 'akar request' to generate it first");
+            return 1;
+        }
+    };
+    let result = loop_governor::validate_next_run(&content);
+    print!("{}", loop_governor::format_next_run_check(&result));
+    if result.pass {
+        0
+    } else {
+        1
     }
 }
 

@@ -137,6 +137,22 @@ The prompt includes these sections in order:
 - AKAR does not run the prompt automatically
 - `.akar/NEXT_RUN.md` remains local and gitignored
 
+### Validating the next-run prompt
+
+`akar request --check` reads `.akar/NEXT_RUN.md` and validates it against the next-run prompt contract before it is handed to Claude:
+
+- `akar request` — generate/refresh `.akar/NEXT_RUN.md`
+- `akar request --check` — validate the existing `.akar/NEXT_RUN.md` (read-only)
+
+The validator checks:
+
+- all 11 required sections present, in exact order
+- minimum content (AKAR version, governor decision, reason, next action, decision class, objective, evidence, non-empty body sections)
+- safety contract (all forbidden commands listed; `Do not retry blocked commands.` and `Stop if verification fails.` present)
+- decision consistency (decision class and objective match the recorded decision)
+
+It prints `NEXT_RUN check: PASS` (exit 0) or `NEXT_RUN check: FAIL` with one reason per line (exit non-zero). The validator is read-only — it does not write, regenerate, or auto-fix `.akar/NEXT_RUN.md`.
+
 ---
 
 ## Learning patch lifecycle
