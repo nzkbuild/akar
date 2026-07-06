@@ -17,6 +17,7 @@ mod mission;
 mod model_profile;
 mod postmortem;
 mod preflight;
+mod project_verification_contract;
 mod request_intelligence;
 mod safe_fix;
 mod safety;

@@ -304,6 +304,19 @@ If `.akar/` is left untracked and its contents are the only thing making the tre
 
 The PreToolUse hook writes safety events to the **target project's** `.akar/HOOK_EVENTS.jsonl`, not the Claude Code session's working directory. It reads the `"cwd"` field from the hook's stdin JSON (the directory Claude Code is operating in) and uses that as the log root, falling back to the hook process's own cwd if the field is absent. Each event line includes a `log_root` field so the target project is explicit even when inspected from another context.
 
+### Project-aware verification (v0.30.0+)
+
+NEXT_RUN compiled prompts include project-appropriate verification commands instead of a static Cargo list. AKAR detects the project kind from marker files (Cargo.toml, package.json, pyproject.toml/setup.py/requirements.txt) and generates Allowed Commands, Stop Conditions, and Verification Required sections accordingly:
+
+| Project kind | Build command | Test command | AKAR prefix |
+|---|---|---|---|
+| Rust | `cargo build --release` | `cargo test` | `cargo run --` |
+| Node | (none) | `npm test` | `akar` |
+| Python | (none) | `python -m pytest` | `akar` |
+| Unknown | (none) | (documented-verification guidance) | `akar` |
+
+Rust is the highest detection priority, so a repo with both Cargo.toml and package.json is treated as Rust. AKAR does not run these commands automatically — users remain responsible for confirming the correct project-specific test command.
+
 ---
 
 ## Development approach

@@ -181,6 +181,8 @@ If you skip the `git status` check and `.akar/` is left untracked, `akar preflig
 
 Hook events are now written to the **target project's** `.akar/HOOK_EVENTS.jsonl` (the hook reads `"cwd"` from the Claude Code stdin JSON, falling back to the process cwd), so they stay where you'd expect them even when the Claude Code session's working directory differs from the repo being dogfooded.
 
+AKAR detects common project types from marker files (Cargo.toml, package.json, pyproject.toml) and generates project-appropriate verification guidance in `.akar/NEXT_RUN.md`. Rust projects get Cargo commands; Node projects get `npm test`; Python projects get `python -m pytest`; unknown projects get documented-verification guidance. Users remain responsible for confirming the correct project-specific test command — AKAR does not run these commands automatically.
+
 ### Recommended dogfood command
 
 Once bootstrapped, the recommended shape for starting a session is to pass the actual task straight to `akar request` so the compiled `.akar/NEXT_RUN.md` prompt is self-describing instead of generic:

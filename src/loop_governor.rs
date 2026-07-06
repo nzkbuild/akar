@@ -18,7 +18,7 @@
 
 use std::path::Path;
 
-use crate::{config, diff_budget, event_log, foundation, learn};
+use crate::{config, diff_budget, event_log, foundation, learn, project_verification_contract as pvc};
 
 // ---------------------------------------------------------------------------
 // Loop decision
@@ -808,6 +808,7 @@ pub fn compile_next_run_prompt(
 ) -> String {
     let ts = event_log::now_iso8601();
     let version = crate_version();
+    let kind = pvc::detect_project_kind(&cfg.project_root);
     let mut out = String::new();
 
     // Redact the task (it may echo a prompt containing secrets) and collapse to
@@ -827,6 +828,7 @@ pub fn compile_next_run_prompt(
     out.push_str("## Current State\n");
     out.push_str(&format!("- AKAR version: {}\n", version));
     out.push_str(&format!("- project: {}\n", cfg.project_name));
+    out.push_str(&format!("- project kind: {}\n", kind.label()));
     out.push_str(&format!("- timestamp: {}\n", ts));
     out.push_str(&format!("- governor decision: {}\n", report.decision.as_str()));
     out.push_str(&format!("- reason: {}\n", one_line(&report.reason)));
@@ -890,7 +892,7 @@ pub fn compile_next_run_prompt(
 
     // 7. Allowed Commands
     out.push_str("## Allowed Commands\n");
-    for cmd in allowed_commands(&report.decision) {
+    for cmd in allowed_commands(kind, &report.decision) {
         out.push_str(&format!("- `{}`\n", cmd));
     }
     out.push('\n');
@@ -904,15 +906,21 @@ pub fn compile_next_run_prompt(
 
     // 9. Stop Conditions
     out.push_str("## Stop Conditions\n");
-    for cond in stop_conditions(&report.decision) {
+    for cond in stop_conditions(kind, &report.decision) {
         out.push_str(&format!("- {}\n", cond));
     }
     out.push('\n');
 
     // 10. Verification Required
     out.push_str("## Verification Required\n");
-    for cmd in verification_commands(&report.decision) {
+    for cmd in verification_commands(kind, &report.decision) {
         out.push_str(&format!("- `{}`\n", cmd));
+    }
+    // Unknown projects get human-readable guidance.
+    if kind == pvc::ProjectKind::Unknown {
+        for guide in pvc::unknown_verification_guidance() {
+            out.push_str(&format!("- {}\n", guide));
+        }
     }
     out.push('\n');
 
@@ -950,40 +958,46 @@ fn hard_rules() -> Vec<&'static str> {
 }
 
 /// Decision-specific allowed-command additions.
-fn allowed_command_additions(decision: &LoopDecision) -> Vec<&'static str> {
+fn allowed_command_additions(kind: pvc::ProjectKind, decision: &LoopDecision) -> Vec<String> {
     match decision {
-        LoopDecision::SnapshotNow => vec!["cargo run -- preflight --snapshot \"<task>\""],
-        LoopDecision::RunPostmortem => vec!["cargo run -- postmortem --diff --baseline"],
+        LoopDecision::SnapshotNow => vec![format!(
+            "{} preflight --snapshot \"<task>\"",
+            pvc::akar_prefix(kind)
+        )],
+        LoopDecision::RunPostmortem => vec![format!(
+            "{} postmortem --diff --baseline",
+            pvc::akar_prefix(kind)
+        )],
         LoopDecision::CommitCheckpoint => {
-            vec!["git add <explicit files>", "git commit -m \"<message>\""]
+            vec!["git add <explicit files>".to_string(), "git commit -m \"<message>\"".to_string()]
         }
-        LoopDecision::SplitTask => vec!["(no git mutation; write a smaller prompt only)"],
+        LoopDecision::SplitTask => vec!["(no git mutation; write a smaller prompt only)".to_string()],
         LoopDecision::StopHookBroken => {
-            vec!["where.exe akar", "pwsh -NoProfile -Command \"Get-Command akar\""]
+            vec!["where.exe akar".to_string(), "pwsh -NoProfile -Command \"Get-Command akar\"".to_string()]
         }
-        LoopDecision::StopRepeatedBlock => vec!["inspect `.akar/HOOK_EVENTS.jsonl`"],
+        LoopDecision::StopRepeatedBlock => vec!["inspect `.akar/HOOK_EVENTS.jsonl`".to_string()],
         _ => vec![],
     }
 }
 
 /// The always-on allowed commands plus decision-specific additions.
-fn allowed_commands(decision: &LoopDecision) -> Vec<String> {
+fn allowed_commands(kind: pvc::ProjectKind, decision: &LoopDecision) -> Vec<String> {
     let mut cmds: Vec<String> = vec![
         "git status".to_string(),
         "git diff".to_string(),
         "git diff --stat".to_string(),
         "git log --oneline -5".to_string(),
-        "cargo build --release".to_string(),
-        "cargo test".to_string(),
-        "cargo run -- --version".to_string(),
-        "cargo run -- status".to_string(),
-        "cargo run -- governor --json --no-exit-code".to_string(),
-        "cargo run -- doctor".to_string(),
-        "cargo run -- eval".to_string(),
-        "cargo run -- hooks --check".to_string(),
     ];
-    for add in allowed_command_additions(decision) {
-        cmds.push(add.to_string());
+    // Project-specific build+test commands.
+    for c in pvc::project_allowed_commands(kind) {
+        cmds.push(c);
+    }
+    // AKAR CLI commands with project-appropriate prefix.
+    for c in pvc::akar_cli_commands(kind) {
+        cmds.push(c);
+    }
+    for add in allowed_command_additions(kind, decision) {
+        cmds.push(add);
     }
     cmds
 }
@@ -1018,16 +1032,17 @@ fn stop_condition_additions(decision: &LoopDecision) -> Vec<&'static str> {
 }
 
 /// The always-on stop conditions plus decision-specific additions.
-fn stop_conditions(decision: &LoopDecision) -> Vec<String> {
+fn stop_conditions(kind: pvc::ProjectKind, decision: &LoopDecision) -> Vec<String> {
     let mut conds: Vec<String> = vec![
         "Stop if hook evidence is missing when hook behavior is being tested.".to_string(),
         "Stop if `akar hooks --check` fails.".to_string(),
         "Stop if `akar safety \"rm -rf /\"` is not BLOCKED during safety proof.".to_string(),
-        "Stop if `cargo test` fails.".to_string(),
-        "Stop if `cargo run -- eval` fails.".to_string(),
+        format!("Stop if `{} eval` fails.", pvc::akar_prefix(kind)),
         "Stop if governor decision is STOP_HOOK_BROKEN.".to_string(),
         "Stop if governor decision is STOP_REPEATED_BLOCK and the plan still retries the same command.".to_string(),
     ];
+    // Project-specific test-failure stop condition.
+    conds.extend(pvc::project_stop_conditions(kind));
     for add in stop_condition_additions(decision) {
         conds.push(add.to_string());
     }
@@ -1035,34 +1050,39 @@ fn stop_conditions(decision: &LoopDecision) -> Vec<String> {
 }
 
 /// Decision-specific verification-command additions.
-fn verification_additions(decision: &LoopDecision) -> Vec<&'static str> {
+fn verification_additions(kind: pvc::ProjectKind, decision: &LoopDecision) -> Vec<String> {
     match decision {
-        LoopDecision::RunPostmortem => vec!["cargo run -- postmortem --diff --baseline"],
-        LoopDecision::SnapshotNow => vec!["cargo run -- preflight --snapshot \"<task>\""],
+        LoopDecision::RunPostmortem => vec![format!(
+            "{} postmortem --diff --baseline",
+            pvc::akar_prefix(kind)
+        )],
+        LoopDecision::SnapshotNow => vec![format!(
+            "{} preflight --snapshot \"<task>\"",
+            pvc::akar_prefix(kind)
+        )],
         LoopDecision::CommitCheckpoint => {
-            vec!["git status", "git diff --stat"]
+            vec!["git status".to_string(), "git diff --stat".to_string()]
         }
         LoopDecision::StopRepeatedBlock => {
-            vec!["read `.akar/HOOK_EVENTS.jsonl` and confirm repeated block evidence"]
+            vec!["read `.akar/HOOK_EVENTS.jsonl` and confirm repeated block evidence".to_string()]
         }
         _ => vec![],
     }
 }
 
 /// The always-on verification commands plus decision-specific additions.
-fn verification_commands(decision: &LoopDecision) -> Vec<String> {
-    let mut cmds: Vec<String> = vec![
-        "cargo build --release".to_string(),
-        "cargo test".to_string(),
-        "cargo run -- --version".to_string(),
-        "cargo run -- status".to_string(),
-        "cargo run -- governor --json --no-exit-code".to_string(),
-        "cargo run -- doctor".to_string(),
-        "cargo run -- eval".to_string(),
-        "cargo run -- hooks --check".to_string(),
-    ];
-    for add in verification_additions(decision) {
-        cmds.push(add.to_string());
+fn verification_commands(kind: pvc::ProjectKind, decision: &LoopDecision) -> Vec<String> {
+    let mut cmds: Vec<String> = Vec::new();
+    // Project-specific build+test commands.
+    for c in pvc::project_verification_commands(kind) {
+        cmds.push(c);
+    }
+    // AKAR CLI commands with project-appropriate prefix.
+    for c in pvc::akar_cli_commands(kind) {
+        cmds.push(c);
+    }
+    for add in verification_additions(kind, decision) {
+        cmds.push(add);
     }
     cmds
 }
