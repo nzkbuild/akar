@@ -12,6 +12,7 @@ mod doctor;
 mod eval;
 mod event_log;
 mod learn;
+mod loop_governor;
 mod mission;
 mod model_profile;
 mod postmortem;
@@ -230,6 +231,11 @@ fn cmd_status() {
     if matches!(readiness.readiness, diff_budget::LoopReadiness::Blocked) {
         println!("  guidance: {}", foundation::git_dirty_playbook());
     }
+
+    // Knowledge-driven loop governor: chooses the next safe loop action from
+    // local evidence + foundation playbooks. Advisory only — never executes.
+    let governor = loop_governor::decide(&cfg);
+    print!("{}", loop_governor::format_loop_governor(&governor));
 
     if !issues.is_empty() {
         println!("  issues:");
@@ -698,6 +704,15 @@ fn cmd_request(used: Option<u64>, limit: Option<u64>, prompt: Option<String>) {
         if let Some(path) = request_intelligence::write_next_run(&cfg, "resume from last mission") {
             println!("  wrote: {}", path.display());
         }
+    }
+
+    // Knowledge-driven loop governor: surface the next safe loop action and
+    // write a governor-aware NEXT_RUN.md. Advisory only — never executes.
+    let governor = loop_governor::decide(&cfg);
+    println!();
+    print!("{}", loop_governor::format_loop_governor(&governor));
+    if let Some(path) = loop_governor::write_governor_next_run(&cfg, &governor) {
+        println!("  wrote: {}", path.display());
     }
 }
 

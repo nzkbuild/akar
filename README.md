@@ -42,6 +42,38 @@ AKAR provides alternatives before retry. It does not execute the playbooks autom
 
 ---
 
+## Knowledge-driven loop governor
+
+AKAR v0.13.0 uses local evidence plus foundation playbooks to suggest the next safe loop action, so Claude avoids repeated failed commands, dirty-tree confusion, and token-wasting retry loops.
+
+The governor reads local evidence only:
+- git repository status and working tree clean state
+- `.akar/DIFF_BASELINE.json`
+- `.akar/HOOK_EVENTS.jsonl`
+- `.akar/LEARNING_PATCHES.md`
+
+It chooses one of eight decisions, in this priority order:
+
+| Decision | When |
+| --- | --- |
+| `UNKNOWN` | git unavailable or not a repository |
+| `STOP_HOOK_BROKEN` | hook ERROR event with `akar not found` |
+| `STOP_REPEATED_BLOCK` | same command blocked 2+ times |
+| `SPLIT_TASK` | learning patches require reducing scope |
+| `RUN_POSTMORTEM` | baseline exists and tree is dirty |
+| `READY` | baseline exists and tree is clean |
+| `SNAPSHOT_NOW` | no baseline and tree is clean |
+| `COMMIT_CHECKPOINT` | no baseline and tree is dirty |
+
+The decision surfaces in `akar status` (under `loop governor:`) and in `akar request` (which writes `.akar/NEXT_RUN.md` with the decision, reason, next action, suggested next Claude prompt, and evidence used).
+
+- AKAR uses local evidence plus foundation playbooks to suggest the next safe action
+- AKAR helps Claude avoid repeated failed attempts
+- AKAR does not execute the action automatically
+- AKAR does not reset, clean, stash, checkout, push, or delete files
+
+---
+
 ## What it does not do
 
 - It is not an AI model
