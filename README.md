@@ -83,11 +83,31 @@ Repeated blocked commands are detected from recent hook evidence (the most recen
 - `akar governor` — human-readable: decision, reason, next action, suggested prompt, evidence used
 - `akar governor --one-line` — exactly one line: `DECISION<TAB>SUGGESTED_PROMPT` (no decoration, no color)
 - `akar governor --json` — a single JSON object with `decision`, `reason`, `next_action`, `suggested_prompt`, `evidence_used`
+- `akar governor --no-exit-code` — print the same output but always exit 0
 
-- the command is advisory-only
-- it does not execute the next action
-- it does not write files or mutate git
-- it is intended for Claude/session orchestration
+`akar governor` (in all output modes) returns an exit code based on the decision so an orchestrator can branch on `$?` without parsing output:
+
+| Decision             | Exit code |
+|----------------------|-----------|
+| READY                | 0         |
+| SNAPSHOT_NOW         | 0         |
+| RUN_POSTMORTEM       | 10        |
+| COMMIT_CHECKPOINT    | 11        |
+| SPLIT_TASK           | 12        |
+| STOP_HOOK_BROKEN     | 20        |
+| STOP_REPEATED_BLOCK  | 21        |
+| UNKNOWN              | 30        |
+
+Example:
+```
+akar governor --one-line
+echo $?
+```
+On Windows PowerShell, use `$LASTEXITCODE` instead of `$?`.
+
+- exit codes are for orchestration only
+- AKAR still does not execute the suggested action
+- the command is advisory-only; it does not write files or mutate git
 
 ---
 

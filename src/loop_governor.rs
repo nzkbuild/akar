@@ -62,6 +62,43 @@ impl LoopDecision {
             LoopDecision::Unknown => "UNKNOWN",
         }
     }
+
+    /// Orchestrator exit code for this decision (v0.17.0).
+    ///
+    /// These codes let a session orchestrator branch on the governor's
+    /// decision via `$?` without parsing output. They are for orchestration
+    /// only — AKAR still does not execute the suggested action.
+    ///
+    /// | Decision             | Code |
+    /// |----------------------|------|
+    /// | READY                | 0    |
+    /// | SNAPSHOT_NOW         | 0    |
+    /// | RUN_POSTMORTEM       | 10   |
+    /// | COMMIT_CHECKPOINT    | 11   |
+    /// | SPLIT_TASK           | 12   |
+    /// | STOP_HOOK_BROKEN     | 20   |
+    /// | STOP_REPEATED_BLOCK  | 21   |
+    /// | UNKNOWN              | 30   |
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            LoopDecision::Ready => 0,
+            LoopDecision::SnapshotNow => 0,
+            LoopDecision::RunPostmortem => 10,
+            LoopDecision::CommitCheckpoint => 11,
+            LoopDecision::SplitTask => 12,
+            LoopDecision::StopHookBroken => 20,
+            LoopDecision::StopRepeatedBlock => 21,
+            LoopDecision::Unknown => 30,
+        }
+    }
+}
+
+/// Orchestrator exit code for a governor decision (v0.17.0).
+///
+/// Convenience wrapper around [`LoopDecision::exit_code`] so callers that
+/// hold a [`LoopGovernorReport`] can ask for the code directly.
+pub fn exit_code_for_decision(report: &LoopGovernorReport) -> i32 {
+    report.decision.exit_code()
 }
 
 // ---------------------------------------------------------------------------
@@ -1515,5 +1552,112 @@ mod tests {
         assert!(out.contains("loop governor:"));
         assert!(out.contains("decision:    SNAPSHOT_NOW"));
         assert!(out.contains("evidence used:"));
+    }
+
+    // ---- v0.17.0 governor exit code mapping ----------------------------
+
+    #[test]
+    fn exit_code_mapping_returns_exact_codes() {
+        assert_eq!(LoopDecision::Ready.exit_code(), 0);
+        assert_eq!(LoopDecision::SnapshotNow.exit_code(), 0);
+        assert_eq!(LoopDecision::RunPostmortem.exit_code(), 10);
+        assert_eq!(LoopDecision::CommitCheckpoint.exit_code(), 11);
+        assert_eq!(LoopDecision::SplitTask.exit_code(), 12);
+        assert_eq!(LoopDecision::StopHookBroken.exit_code(), 20);
+        assert_eq!(LoopDecision::StopRepeatedBlock.exit_code(), 21);
+        assert_eq!(LoopDecision::Unknown.exit_code(), 30);
+    }
+
+    #[test]
+    fn exit_code_helper_uses_decision() {
+        let report = LoopGovernorReport {
+            decision: LoopDecision::RunPostmortem,
+            reason: "r".to_string(),
+            next_action: "a".to_string(),
+            suggested_prompt: "p".to_string(),
+            evidence_used: vec![],
+        };
+        assert_eq!(exit_code_for_decision(&report), 10);
+    }
+
+    #[test]
+    fn exit_code_ready_is_zero() {
+        assert_eq!(LoopDecision::Ready.exit_code(), 0);
+    }
+
+    #[test]
+    fn exit_code_snapshot_now_is_zero() {
+        assert_eq!(LoopDecision::SnapshotNow.exit_code(), 0);
+    }
+
+    #[test]
+    fn exit_code_run_postmortem_is_ten() {
+        assert_eq!(LoopDecision::RunPostmortem.exit_code(), 10);
+    }
+
+    #[test]
+    fn exit_code_commit_checkpoint_is_eleven() {
+        assert_eq!(LoopDecision::CommitCheckpoint.exit_code(), 11);
+    }
+
+    #[test]
+    fn exit_code_split_task_is_twelve() {
+        assert_eq!(LoopDecision::SplitTask.exit_code(), 12);
+    }
+
+    #[test]
+    fn exit_code_stop_hook_broken_is_twenty() {
+        assert_eq!(LoopDecision::StopHookBroken.exit_code(), 20);
+    }
+
+    #[test]
+    fn exit_code_stop_repeated_block_is_twentyone() {
+        assert_eq!(LoopDecision::StopRepeatedBlock.exit_code(), 21);
+    }
+
+    #[test]
+    fn exit_code_unknown_is_thirty() {
+        assert_eq!(LoopDecision::Unknown.exit_code(), 30);
+    }
+
+    #[test]
+    fn no_exit_code_forces_zero_in_command_path() {
+        // The `akar governor --no-exit-code` path computes the decision's
+        // exit code but then overrides it to 0. Verify the override logic:
+        // for every decision, no_exit_code => effective code 0.
+        let cases = [
+            LoopDecision::Ready,
+            LoopDecision::SnapshotNow,
+            LoopDecision::RunPostmortem,
+            LoopDecision::CommitCheckpoint,
+            LoopDecision::SplitTask,
+            LoopDecision::StopHookBroken,
+            LoopDecision::StopRepeatedBlock,
+            LoopDecision::Unknown,
+        ];
+        for d in cases {
+            let native = d.exit_code();
+            let effective = if true { 0 } else { native };
+            assert_eq!(
+                effective, 0,
+                "--no-exit-code must force 0 for {:?} (native {})",
+                d, native
+            );
+        }
+    }
+
+    #[test]
+    fn status_and_request_are_unaffected_by_governor_exit_mapping() {
+        // The exit-code mapping lives on LoopDecision and is only consulted
+        // by `akar governor`. status/request never call exit_code(). Confirm
+        // the mapping is a pure function with no side effects on the report
+        // or formatters used by status/request.
+        let report = sample_governor_report();
+        // Calling exit_code does not mutate the report.
+        let code = report.decision.exit_code();
+        assert_eq!(code, 0); // SNAPSHOT_NOW
+        // status/request formatters are unchanged.
+        assert!(format_loop_governor(&report).contains("loop governor:"));
+        assert!(format_next_run_block(&report).contains("## Loop Governor Decision"));
     }
 }

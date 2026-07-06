@@ -49,7 +49,12 @@ fn main() {
         "governor" => {
             let one_line = args.iter().any(|a| a == "--one-line");
             let json_mode = args.iter().any(|a| a == "--json");
-            cmd_governor(one_line, json_mode);
+            let no_exit_code = args.iter().any(|a| a == "--no-exit-code");
+            let code = cmd_governor(one_line, json_mode, no_exit_code);
+            // Exit codes are for orchestration only. AKAR still does not
+            // execute the suggested action. --no-exit-code forces 0 so the
+            // command is safe to call in pipelines that check $?
+            process::exit(code);
         }
         "doctor" => {
             let fix_mode = args.get(2).map(|s| s.as_str()) == Some("--fix");
@@ -157,6 +162,7 @@ fn print_usage() {
     println!("  governor   Print the loop governor decision (next safe action)");
     println!("  governor --one-line  Print DECISION<TAB>SUGGESTED_PROMPT on one line");
     println!("  governor --json      Print the loop governor decision as JSON");
+    println!("  governor --no-exit-code  Print output but always exit 0");
     println!("  doctor      Read-only health check of AKAR and project config");
     println!("  doctor --fix  Apply safe fixes for detected issues (backs up before overwriting)");
     println!("  bootstrap   Initialize missing AKAR memory files for a project");
@@ -263,21 +269,30 @@ fn cmd_status() {
 /// standalone, scrape-friendly form. Supports `--one-line` (a single
 /// `DECISION<TAB>SUGGESTED_PROMPT` line) and `--json` (a single JSON object).
 ///
+/// Returns an orchestrator exit code based on the decision (v0.17.0):
+/// READY/SNAPSHOT_NOW=0, RUN_POSTMORTEM=10, COMMIT_CHECKPOINT=11,
+/// SPLIT_TASK=12, STOP_HOOK_BROKEN=20, STOP_REPEATED_BLOCK=21, UNKNOWN=30.
+/// `no_exit_code` forces the return to 0 while keeping identical output.
+///
 /// Advisory only: does not write files, does not mutate git, does not execute
 /// the suggested action.
-fn cmd_governor(one_line: bool, json_mode: bool) {
+fn cmd_governor(one_line: bool, json_mode: bool, no_exit_code: bool) -> i32 {
     let cfg = config::Config::discover();
     let report = loop_governor::decide(&cfg);
 
     if one_line {
         println!("{}", loop_governor::format_governor_one_line(&report));
-        return;
-    }
-    if json_mode {
+    } else if json_mode {
         println!("{}", loop_governor::format_governor_json(&report));
-        return;
+    } else {
+        print!("{}", loop_governor::format_governor_report(&report));
     }
-    print!("{}", loop_governor::format_governor_report(&report));
+
+    if no_exit_code {
+        0
+    } else {
+        loop_governor::exit_code_for_decision(&report)
+    }
 }
 
 fn cmd_run(prompt: &str, used: Option<u64>, limit: Option<u64>) {
