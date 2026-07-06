@@ -237,7 +237,7 @@ AKAR does not clean, stash, commit, reset, or revert for you.
 
 - **environment** — project root detected, `.akar/` exists and is writable, `akar` visible on PATH
 - **files** — `NEXT_RUN.md` present, `DIFF_BASELINE.json` present/valid, `LEARNING_PATCHES.md` summary
-- **hooks** — `templates/hooks/pre-tool-call.{sh,ps1}` exist and are valid (the internal equivalent of `akar hooks --check`)
+- **hooks** — `templates/hooks/pre-tool-call.{sh,ps1}` are valid. Templates are discovered from the source tree, the project's `.akar/hooks/` (after `akar hooks --install`), or the embedded fallback baked into the binary — so a fresh external repo PASSes without the AKAR source tree. The doctor reports which source was used and notes that Claude Code settings wiring is always manual.
 - **telemetry** — `EVENT_LOG.jsonl` and `HOOK_EVENTS.jsonl` parseable (structural JSON check)
 - **git** — repository detected, working-tree clean/dirty, `Cargo.toml` present
 - **next-run** — `NEXT_RUN.md` passes the request validator if present
@@ -262,6 +262,17 @@ AKAR does not clean, stash, commit, reset, or revert for you.
 - auto-fixes malformed files.
 
 `akar doctor --fix` is intentionally limited. It can apply only the pre-existing safe directory creation (creating a missing `.akar/`). It does **not** modify Claude settings, install hooks, mutate git, rewrite `NEXT_RUN.md`, resolve patches, or auto-fix malformed files — dogfood-critical checks (invalid `NEXT_RUN.md`, malformed logs, missing hook templates, no git repo) require human action. `akar hooks --check` remains the dedicated hook-template validity check.
+
+### Hook setup (external repos)
+
+AKAR embeds the PreToolUse hook templates in the binary, so you can install them into any repo without the AKAR source tree:
+
+```
+akar hooks --install    # writes .akar/hooks/pre-tool-call.{sh,ps1} from the embedded templates
+akar hooks --check      # validates (source-tree, project .akar/hooks/, or embedded)
+```
+
+`akar hooks --install` writes the embedded templates to `.akar/hooks/`. If a file already exists with identical content it is skipped; if it differs, the existing file is backed up before overwrite. AKAR **never** edits `~/.claude/settings.json` — you must register the hook in Claude Code manually (see `akar hooks` for the settings.json example). `akar hooks --check` and `akar doctor` accept templates from the source tree, the project's `.akar/hooks/`, or the embedded fallback, so a fresh external repo no longer FAILs just because source-tree templates are absent.
 
 ---
 
@@ -343,9 +354,9 @@ akar learn              — propose a learning note if needed
 | `akar verify` | Run verification recipe (the one command that runs cargo/npm — user-invoked) |
 | `akar safety "<cmd>"` | Classify command risk level (exits 2 for BLOCKED) |
 | `akar calibrate` | Model/gateway profile (display only) |
-| `akar hooks` | Print hook template locations and manual install instructions |
-| `akar hooks --check` | Verify hook templates exist and are valid |
-| `akar hooks --install` | Copy templates into `.akar/hooks/` (requires confirmation) |
+| `akar hooks` | Print hook template info and manual wiring instructions |
+| `akar hooks --check` | Verify hook templates (source-tree, project `.akar/hooks/`, or embedded fallback) |
+| `akar hooks --install` | Write embedded hook templates into `.akar/hooks/` (requires confirmation; never edits `~/.claude/settings.json`) |
 
 ---
 

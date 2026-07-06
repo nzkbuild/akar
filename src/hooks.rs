@@ -1,23 +1,85 @@
 //! Hook template management — check, install, and verify hook scripts.
 //!
-//! AKAR ships hook templates in `templates/hooks/`. The `akar hooks` command
-//! prints instructions. `akar hooks --check` verifies templates exist and are
-//! readable. `akar hooks --install` copies templates into `.akar/hooks/` after
-//! explicit user confirmation.
+//! AKAR embeds the PreToolUse hook templates directly in the binary (via
+//! `include_str!`) so `akar hooks --install`, `akar hooks --check`, and
+//! `akar doctor` work in a fresh external repo **without the AKAR source
+//! tree**. The source-tree `templates/hooks/` files remain the editable
+//! source; the embedded copies are regenerated at compile time.
+//!
+//! Template discovery order for `--check`:
+//! 1. **source-tree** — `<project_root>/templates/hooks/` (dev mode)
+//! 2. **exe-dir** — `<exe_dir>/templates/hooks/` (rare)
+//! 3. **project-installed** — `<project_root>/.akar/hooks/` (after `--install`)
+//! 4. **embedded fallback** — the `include_str!` copies baked into the binary
+//!
+//! `--install` always writes the **embedded** templates so it works without a
+//! source tree. AKAR never modifies `~/.claude/settings.json`; the user wires
+//! the PreToolUse hook manually.
 
 use std::path::{Path, PathBuf};
 use crate::config;
 
 // ---------------------------------------------------------------------------
+// Embedded templates (compiled into the binary)
+// ---------------------------------------------------------------------------
+
+/// The bash PreToolUse hook template, embedded at compile time.
+pub const EMBEDDED_HOOK_SH: &str = include_str!("../templates/hooks/pre-tool-call.sh");
+
+/// The PowerShell PreToolUse hook template, embedded at compile time.
+pub const EMBEDDED_HOOK_PS1: &str = include_str!("../templates/hooks/pre-tool-call.ps1");
+
+/// Return the embedded template content for a given template name, or `None`.
+pub fn embedded_template_content(name: &str) -> Option<&'static str> {
+    match name {
+        "pre-tool-call.sh" => Some(EMBEDDED_HOOK_SH),
+        "pre-tool-call.ps1" => Some(EMBEDDED_HOOK_PS1),
+        _ => None,
+    }
+}
+
+/// The set of expected hook template names, in stable order.
+pub const EXPECTED_HOOK_TEMPLATES: &[&str] = &["pre-tool-call.sh", "pre-tool-call.ps1"];
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+/// Where a hook template was discovered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HookTemplateSource {
+    /// `<project_root>/templates/hooks/` (source tree / dev mode).
+    SourceTree,
+    /// `<exe_dir>/templates/hooks/`.
+    ExeDir,
+    /// `<project_root>/.akar/hooks/` (installed by `akar hooks --install`).
+    ProjectInstalled,
+    /// Compiled into the binary via `include_str!`.
+    Embedded,
+}
+
+impl HookTemplateSource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HookTemplateSource::SourceTree => "source-tree",
+            HookTemplateSource::ExeDir => "exe-dir",
+            HookTemplateSource::ProjectInstalled => "project .akar/hooks",
+            HookTemplateSource::Embedded => "embedded",
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct HookTemplate {
     pub name: String,
+    /// Filesystem path the template was read from (synthetic for embedded).
     #[allow(dead_code)]
     pub source: PathBuf,
     pub content: String,
+    /// How this template was discovered (per-template; the aggregated source
+    /// used by `check_hooks` is returned separately by `discover_hook_templates`).
+    #[allow(dead_code)]
+    pub discovered_via: HookTemplateSource,
 }
 
 #[derive(Debug)]
@@ -25,12 +87,16 @@ pub struct HooksCheckResult {
     pub templates_found: Vec<String>,
     pub templates_missing: Vec<String>,
     pub all_valid: bool,
+    /// Where the checked templates came from (None if none found).
+    pub source: Option<HookTemplateSource>,
 }
 
 #[derive(Debug)]
 pub struct HooksInstallResult {
     pub copied: Vec<String>,
     pub backed_up: Vec<String>,
+    /// Files whose content already matched the embedded template (no write).
+    pub unchanged: Vec<String>,
     pub cancelled: bool,
     pub reason: String,
 }
@@ -39,25 +105,48 @@ pub struct HooksInstallResult {
 // Template discovery
 // ---------------------------------------------------------------------------
 
-/// Locate hook template files. Searches:
-/// 1. `<project_root>/templates/hooks/`
+/// Locate hook template files from the source tree or exe dir.
+///
+/// Searches:
+/// 1. `<project_root>/templates/hooks/` (source tree / dev mode)
 /// 2. `<exe_dir>/templates/hooks/`
+///
+/// Does NOT include the embedded fallback or project-installed templates —
+/// those are handled by [`discover_hook_templates`], which `check_hooks` and
+/// `install_hooks` use. Retained as a public API for tests that validate the
+/// source-tree template files directly.
+#[allow(dead_code)]
 pub fn find_hook_templates(project_root: &Path) -> Vec<HookTemplate> {
-    let mut templates = Vec::new();
-    let template_names = ["pre-tool-call.sh", "pre-tool-call.ps1"];
+    let (templates, _source) = discover_from_filesystem(project_root);
+    templates
+}
 
-    let candidates: Vec<PathBuf> = vec![
-        Some(project_root.join("templates").join("hooks")),
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|d| d.join("templates").join("hooks"))),
-    ].into_iter().flatten().collect();
+/// Filesystem-only discovery (source-tree then exe-dir). Returns the templates
+/// found and which source they came from. Returns `(vec![], None)` if neither
+/// directory has templates.
+fn discover_from_filesystem(project_root: &Path) -> (Vec<HookTemplate>, Option<HookTemplateSource>) {
+    let candidates: Vec<(PathBuf, HookTemplateSource)> = vec![
+        (
+            project_root.join("templates").join("hooks"),
+            HookTemplateSource::SourceTree,
+        ),
+        {
+            let exe_dir = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.join("templates").join("hooks")));
+            match exe_dir {
+                Some(d) => (d, HookTemplateSource::ExeDir),
+                None => (PathBuf::from("/__nonexistent_exe_dir__"), HookTemplateSource::ExeDir),
+            }
+        },
+    ];
 
-    for dir in candidates {
+    for (dir, src) in &candidates {
         if !dir.is_dir() {
             continue;
         }
-        for name in &template_names {
+        let mut templates = Vec::new();
+        for name in EXPECTED_HOOK_TEMPLATES {
             let path = dir.join(name);
             if path.exists() {
                 if let Ok(content) = std::fs::read_to_string(&path) {
@@ -65,17 +154,76 @@ pub fn find_hook_templates(project_root: &Path) -> Vec<HookTemplate> {
                         name: name.to_string(),
                         source: path,
                         content,
+                        discovered_via: *src,
                     });
                 }
             }
         }
-        // Stop after first directory that has templates
         if !templates.is_empty() {
-            break;
+            return (templates, Some(*src));
         }
     }
 
+    (Vec::new(), None)
+}
+
+/// Read installed templates from `<project_root>/.akar/hooks/`. Returns the
+/// templates found (with `discovered_via = ProjectInstalled`) or an empty vec.
+fn discover_installed(akar_dir: &Path) -> Vec<HookTemplate> {
+    let dir = akar_dir.join("hooks");
+    if !dir.is_dir() {
+        return Vec::new();
+    }
+    let mut templates = Vec::new();
+    for name in EXPECTED_HOOK_TEMPLATES {
+        let path = dir.join(name);
+        if path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                templates.push(HookTemplate {
+                    name: name.to_string(),
+                    source: path,
+                    content,
+                    discovered_via: HookTemplateSource::ProjectInstalled,
+                });
+            }
+        }
+    }
     templates
+}
+
+/// Return the embedded templates as `HookTemplate`s (synthetic source path).
+fn embedded_templates() -> Vec<HookTemplate> {
+    EXPECTED_HOOK_TEMPLATES
+        .iter()
+        .filter_map(|name| {
+            embedded_template_content(name).map(|content| HookTemplate {
+                name: name.to_string(),
+                source: PathBuf::from(format!("<embedded>/{}", name)),
+                content: content.to_string(),
+                discovered_via: HookTemplateSource::Embedded,
+            })
+        })
+        .collect()
+}
+
+/// Discover hook templates in priority order, returning the templates and the
+/// source they came from:
+///
+/// 1. source-tree / exe-dir filesystem templates (if present)
+/// 2. project-installed `.akar/hooks/` templates (if present)
+/// 3. embedded fallback (always available from the binary)
+pub fn discover_hook_templates(cfg: &config::Config) -> (Vec<HookTemplate>, HookTemplateSource) {
+    let (fs_templates, fs_source) = discover_from_filesystem(&cfg.project_root);
+    if !fs_templates.is_empty() {
+        return (fs_templates, fs_source.unwrap_or(HookTemplateSource::SourceTree));
+    }
+
+    let installed = discover_installed(&cfg.akar_dir);
+    if !installed.is_empty() {
+        return (installed, HookTemplateSource::ProjectInstalled);
+    }
+
+    (embedded_templates(), HookTemplateSource::Embedded)
 }
 
 // ---------------------------------------------------------------------------
@@ -87,14 +235,17 @@ pub fn find_hook_templates(project_root: &Path) -> Vec<HookTemplate> {
 /// - reads from stdin (not argv)
 /// - writes to `.akar/HOOK_EVENTS.jsonl`
 /// - uses exit 2 for BLOCK
+///
+/// Templates are discovered in priority order (source-tree → exe-dir →
+/// project-installed `.akar/hooks/` → embedded fallback). The result records
+/// which source was used. A fresh external repo with no source-tree templates
+/// still PASSes via the embedded fallback.
 pub fn check_hooks(cfg: &config::Config) -> HooksCheckResult {
-    let templates = find_hook_templates(&cfg.project_root);
+    let (templates, source) = discover_hook_templates(cfg);
     let mut templates_found = Vec::new();
     let mut templates_missing = Vec::new();
 
-    let expected = ["pre-tool-call.sh", "pre-tool-call.ps1"];
-
-    for name in &expected {
+    for name in EXPECTED_HOOK_TEMPLATES {
         if let Some(t) = templates.iter().find(|t| t.name == *name) {
             let mut issues = Vec::new();
 
@@ -130,10 +281,12 @@ pub fn check_hooks(cfg: &config::Config) -> HooksCheckResult {
         }
     }
 
+    let all_valid = templates_missing.is_empty() && !templates_found.is_empty();
     HooksCheckResult {
-        all_valid: templates_missing.is_empty(),
+        all_valid,
         templates_found,
         templates_missing,
+        source: Some(source),
     }
 }
 
@@ -141,28 +294,43 @@ pub fn check_hooks(cfg: &config::Config) -> HooksCheckResult {
 // Hooks install
 // ---------------------------------------------------------------------------
 
-/// Install hook templates into `.akar/hooks/`. Creates backups before overwrite.
-/// Returns the result without writing anything if `confirmed` is false.
+/// Install hook templates into `.akar/hooks/` from the **embedded** templates
+/// baked into the binary, so installation works in a fresh external repo
+/// without the AKAR source tree.
+///
+/// Behavior:
+/// - Ensures `.akar/hooks/` exists.
+/// - For each expected template:
+///   - if the dest does not exist → write it (`copied`)
+///   - if the dest exists and content is identical to the embedded template →
+///     skip (`unchanged`)
+///   - if the dest exists and content differs → back up the existing file,
+///     then overwrite (`copied` + `backed_up`)
+/// - Does not modify `~/.claude/settings.json`.
+///
+/// Returns without writing anything if `confirmed` is false.
 pub fn install_hooks(cfg: &config::Config, confirmed: bool) -> HooksInstallResult {
-    let templates = find_hook_templates(&cfg.project_root);
+    let embedded = embedded_templates();
 
-    if templates.is_empty() {
+    if embedded.is_empty() {
         return HooksInstallResult {
             copied: Vec::new(),
             backed_up: Vec::new(),
+            unchanged: Vec::new(),
             cancelled: true,
-            reason: "no hook templates found".to_string(),
+            reason: "no embedded hook templates available".to_string(),
         };
     }
 
     if !confirmed {
         let mut files_to_copy = Vec::new();
-        for t in &templates {
+        for t in &embedded {
             files_to_copy.push(t.name.clone());
         }
         return HooksInstallResult {
             copied: Vec::new(),
             backed_up: Vec::new(),
+            unchanged: Vec::new(),
             cancelled: true,
             reason: format!("would copy: {}", files_to_copy.join(", ")),
         };
@@ -173,6 +341,7 @@ pub fn install_hooks(cfg: &config::Config, confirmed: bool) -> HooksInstallResul
         return HooksInstallResult {
             copied: Vec::new(),
             backed_up: Vec::new(),
+            unchanged: Vec::new(),
             cancelled: true,
             reason: format!("failed to create {}: {}", hooks_dir.display(), e),
         };
@@ -180,16 +349,23 @@ pub fn install_hooks(cfg: &config::Config, confirmed: bool) -> HooksInstallResul
 
     let mut copied = Vec::new();
     let mut backed_up = Vec::new();
+    let mut unchanged = Vec::new();
 
-    for t in &templates {
+    for t in &embedded {
         let dest = hooks_dir.join(&t.name);
 
-        // Backup existing file before overwrite
         if dest.exists() {
+            let existing = std::fs::read_to_string(&dest).unwrap_or_default();
+            if existing == t.content {
+                unchanged.push(t.name.clone());
+                continue;
+            }
+            // Content differs — back up before overwrite.
             if let Err(e) = crate::backup::backup_file(&dest) {
                 return HooksInstallResult {
                     copied,
                     backed_up,
+                    unchanged,
                     cancelled: true,
                     reason: format!("backup failed for {}: {}", dest.display(), e),
                 };
@@ -197,13 +373,13 @@ pub fn install_hooks(cfg: &config::Config, confirmed: bool) -> HooksInstallResul
             backed_up.push(t.name.clone());
         }
 
-        // Copy template
         match std::fs::write(&dest, &t.content) {
             Ok(_) => copied.push(t.name.clone()),
             Err(e) => {
                 return HooksInstallResult {
                     copied,
                     backed_up,
+                    unchanged,
                     cancelled: true,
                     reason: format!("write failed for {}: {}", dest.display(), e),
                 };
@@ -214,6 +390,7 @@ pub fn install_hooks(cfg: &config::Config, confirmed: bool) -> HooksInstallResul
     HooksInstallResult {
         copied,
         backed_up,
+        unchanged,
         cancelled: false,
         reason: "ok".to_string(),
     }
@@ -226,24 +403,26 @@ pub fn install_hooks(cfg: &config::Config, confirmed: bool) -> HooksInstallResul
 pub fn format_hooks_help() -> String {
     let mut out = String::new();
     out.push_str("akar hooks:\n");
-    out.push_str("  AKAR ships hook templates for Claude Code integration.\n");
-    out.push_str("  These templates call `akar safety` before tool execution.\n");
+    out.push_str("  AKAR embeds PreToolUse hook templates in the binary and can install\n");
+    out.push_str("  them into a project's .akar/hooks/. The templates call `akar safety`\n");
+    out.push_str("  before tool execution. AKAR never edits ~/.claude/settings.json.\n");
     out.push_str("\n");
-    out.push_str("Templates:\n");
-    out.push_str("  templates/hooks/pre-tool-call.sh   (bash)\n");
-    out.push_str("  templates/hooks/pre-tool-call.ps1  (PowerShell)\n");
+    out.push_str("Templates (embedded in the binary):\n");
+    out.push_str("  pre-tool-call.sh   (bash)\n");
+    out.push_str("  pre-tool-call.ps1  (PowerShell)\n");
     out.push_str("\n");
     out.push_str("Commands:\n");
     out.push_str("  akar hooks              Show this help\n");
-    out.push_str("  akar hooks --check      Verify templates exist and are valid\n");
-    out.push_str("  akar hooks --install    Copy templates into .akar/hooks/ (requires confirmation)\n");
+    out.push_str("  akar hooks --check      Verify templates (source-tree, project .akar/hooks/, or embedded)\n");
+    out.push_str("  akar hooks --install    Write embedded templates into .akar/hooks/ (requires confirmation)\n");
     out.push_str("\n");
-    out.push_str("Manual install:\n");
-    out.push_str("  1. Copy templates/hooks/pre-tool-call.sh to your project\n");
-    out.push_str("  2. Register in ~/.claude/settings.json under hooks.preToolCall\n");
-    out.push_str("  3. Test with: echo 'rm -rf /' | bash pre-tool-call.sh\n");
+    out.push_str("Manual wiring (required — AKAR does not do this):\n");
+    out.push_str("  1. Run `akar hooks --install` to write templates to .akar/hooks/\n");
+    out.push_str("  2. Register the hook in ~/.claude/settings.json under hooks.preToolUse\n");
+    out.push_str("     pointing at .akar/hooks/pre-tool-call.ps1 (Windows) or .sh (POSIX)\n");
+    out.push_str("  3. Test with: echo 'rm -rf /' | bash .akar/hooks/pre-tool-call.sh\n");
     out.push_str("\n");
-    out.push_str("Note: AKAR does not install hooks automatically in v0.5.0.\n");
+    out.push_str("Note: AKAR does not install hooks into Claude Code automatically.\n");
     out.push_str("      The user must copy templates and configure Claude Code manually.\n");
     out
 }
@@ -251,6 +430,10 @@ pub fn format_hooks_help() -> String {
 pub fn format_hooks_check(result: &HooksCheckResult) -> String {
     let mut out = String::new();
     out.push_str("hooks check:\n");
+
+    if let Some(src) = &result.source {
+        out.push_str(&format!("  source: {}\n", src.as_str()));
+    }
 
     if result.all_valid {
         out.push_str("  status: PASS\n");
@@ -284,18 +467,27 @@ pub fn format_hooks_install(result: &HooksInstallResult) -> String {
         out.push_str(&format!("  cancelled: {}\n", result.reason));
     } else {
         out.push_str("  status: ok\n");
+        if !result.copied.is_empty() {
+            out.push_str("  copied (written to .akar/hooks/):\n");
+            for name in &result.copied {
+                out.push_str(&format!("    - {}\n", name));
+            }
+        }
+        if !result.unchanged.is_empty() {
+            out.push_str("  unchanged (content already matches embedded template):\n");
+            for name in &result.unchanged {
+                out.push_str(&format!("    - {}\n", name));
+            }
+        }
         if !result.backed_up.is_empty() {
-            out.push_str("  backed up:\n");
+            out.push_str("  backed up (existing file differed — backed up before overwrite):\n");
             for name in &result.backed_up {
                 out.push_str(&format!("    - {}\n", name));
             }
         }
-        out.push_str("  copied:\n");
-        for name in &result.copied {
-            out.push_str(&format!("    - {}\n", name));
-        }
         out.push_str("\n");
-        out.push_str("  next: register hooks in ~/.claude/settings.json\n");
+        out.push_str("  next: register the hook in ~/.claude/settings.json manually\n");
+        out.push_str("  (AKAR will NOT edit ~/.claude/settings.json).\n");
         out.push_str("  example:\n");
         out.push_str("    {\n");
         out.push_str("      \"hooks\": {\n");
@@ -305,7 +497,7 @@ pub fn format_hooks_install(result: &HooksInstallResult) -> String {
         out.push_str("            \"hooks\": [\n");
         out.push_str("              {\n");
         out.push_str("                \"type\": \"command\",\n");
-        out.push_str("                \"command\": \"pwsh \\\"C:\\\\path\\\\to\\\\akar\\\\templates\\\\hooks\\\\pre-tool-call.ps1\\\"\"\n");
+        out.push_str("                \"command\": \"pwsh \\\"<project>/.akar/hooks/pre-tool-call.ps1\\\"\"\n");
         out.push_str("              }\n");
         out.push_str("            ]\n");
         out.push_str("          }\n");
@@ -407,6 +599,31 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    // -- embedded templates ---------------------------------------------------
+
+    #[test]
+    fn embedded_bash_template_is_nonempty() {
+        assert!(!EMBEDDED_HOOK_SH.trim().is_empty(), "embedded bash template must be non-empty");
+        assert!(EMBEDDED_HOOK_SH.contains("akar safety"));
+        assert!(EMBEDDED_HOOK_SH.contains("HOOK_EVENTS.jsonl"));
+        assert!(EMBEDDED_HOOK_SH.contains("exit 2"));
+    }
+
+    #[test]
+    fn embedded_powershell_template_is_nonempty() {
+        assert!(!EMBEDDED_HOOK_PS1.trim().is_empty(), "embedded ps1 template must be non-empty");
+        assert!(EMBEDDED_HOOK_PS1.contains("akar safety"));
+        assert!(EMBEDDED_HOOK_PS1.contains("HOOK_EVENTS.jsonl"));
+        assert!(EMBEDDED_HOOK_PS1.contains("exit 2"));
+    }
+
+    #[test]
+    fn embedded_template_accessor_returns_correct_content() {
+        assert_eq!(embedded_template_content("pre-tool-call.sh"), Some(EMBEDDED_HOOK_SH));
+        assert_eq!(embedded_template_content("pre-tool-call.ps1"), Some(EMBEDDED_HOOK_PS1));
+        assert_eq!(embedded_template_content("nonexistent"), None);
+    }
+
     fn temp_cfg(name: &str) -> (config::Config, PathBuf) {
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -447,11 +664,20 @@ mod tests {
     }
 
     #[test]
-    fn check_fails_when_templates_missing() {
-        let (cfg, dir) = temp_cfg("check_fail");
+    fn check_passes_via_embedded_when_no_source_templates() {
+        // v0.25: a fresh repo with no source-tree templates must still PASS
+        // because the embedded templates are the fallback. This is the core
+        // fix for the v0.24 dogfood blocker.
+        let (cfg, dir) = temp_cfg("check_embedded");
         let result = check_hooks(&cfg);
-        assert!(!result.all_valid);
-        assert_eq!(result.templates_missing.len(), 2);
+        assert!(
+            result.all_valid,
+            "expected PASS via embedded/templates, got missing: {:?}",
+            result.templates_missing
+        );
+        assert_eq!(result.templates_found.len(), 2);
+        // Source must be reported (embedded, exe-dir, or source-tree).
+        assert!(result.source.is_some(), "source must be reported");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -581,11 +807,56 @@ mod tests {
     }
 
     #[test]
-    fn install_fails_when_no_templates_found() {
-        let (cfg, dir) = temp_cfg("install_no_templates");
+    fn install_writes_embedded_templates_without_source_tree() {
+        // v0.25: install_hooks writes the EMBEDDED templates, so it works in a
+        // fresh external repo with no source tree. (Previously it failed with
+        // "no hook templates found".)
+        let (cfg, dir) = temp_cfg("install_embedded");
+        let _ = std::fs::create_dir_all(&cfg.akar_dir);
         let result = install_hooks(&cfg, true);
-        assert!(result.cancelled);
-        assert!(result.reason.contains("no hook templates"));
+        assert!(!result.cancelled, "install should not cancel: {}", result.reason);
+        assert_eq!(result.copied.len(), 2, "both embedded templates should be written");
+        assert!(cfg.akar_dir.join("hooks").join("pre-tool-call.sh").exists());
+        assert!(cfg.akar_dir.join("hooks").join("pre-tool-call.ps1").exists());
+        // The written content must match the embedded templates.
+        let sh = std::fs::read_to_string(cfg.akar_dir.join("hooks").join("pre-tool-call.sh")).unwrap();
+        assert_eq!(sh, EMBEDDED_HOOK_SH);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn install_skips_when_content_identical() {
+        // If the installed file already matches the embedded template, install
+        // should report it unchanged (no backup, no rewrite).
+        let (cfg, dir) = temp_cfg("install_identical");
+        let _ = std::fs::create_dir_all(&cfg.akar_dir);
+        // First install writes the templates.
+        let first = install_hooks(&cfg, true);
+        assert_eq!(first.copied.len(), 2);
+        // Second install should find identical content.
+        let second = install_hooks(&cfg, true);
+        assert!(!second.cancelled);
+        assert!(second.copied.is_empty(), "no rewrites when identical: {:?}", second.copied);
+        assert_eq!(second.unchanged.len(), 2, "both should be unchanged");
+        assert!(second.backed_up.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn install_backs_up_when_content_differs() {
+        // If the installed file differs from the embedded template, install
+        // backs it up before overwriting.
+        let (cfg, dir) = temp_cfg("install_differs");
+        let _ = std::fs::create_dir_all(&cfg.akar_dir);
+        let hooks_dir = cfg.akar_dir.join("hooks");
+        let _ = std::fs::create_dir_all(&hooks_dir);
+        std::fs::write(hooks_dir.join("pre-tool-call.sh"), "user-modified content\n").unwrap();
+        let result = install_hooks(&cfg, true);
+        assert!(!result.cancelled);
+        assert!(result.backed_up.contains(&"pre-tool-call.sh".to_string()));
+        // The file is now the embedded template (overwritten after backup).
+        let after = std::fs::read_to_string(hooks_dir.join("pre-tool-call.sh")).unwrap();
+        assert_eq!(after, EMBEDDED_HOOK_SH);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -595,7 +866,9 @@ mod tests {
         assert!(out.contains("akar hooks"));
         assert!(out.contains("pre-tool-call.sh"));
         assert!(out.contains("pre-tool-call.ps1"));
-        assert!(out.contains("does not install hooks automatically"));
+        assert!(out.contains("does not install hooks into Claude Code automatically"));
+        assert!(out.contains("akar hooks --install"), "help must mention the install command");
+        assert!(out.contains("~/.claude/settings.json"), "help must mention manual settings wiring");
     }
 
     // -- hook JSON parsing ----------------------------------------------------

@@ -405,15 +405,30 @@ fn check_files(cfg: &crate::config::Config) -> Vec<Check> {
 }
 
 /// Hook-template checks (the internal equivalent of `akar hooks --check`).
+///
+/// v0.25: templates are discovered from source-tree, project `.akar/hooks/`,
+/// or the embedded fallback baked into the binary. The doctor reports the
+/// source and whether templates are valid. The doctor is read-only — it never
+/// installs templates (use `akar hooks --install`). Claude Code settings
+/// wiring is always manual and is not verified here.
 fn check_hooks_section(cfg: &crate::config::Config) -> Vec<Check> {
     let result = crate::hooks::check_hooks(cfg);
     let mut out = Vec::new();
+
+    let source_label = result
+        .source
+        .map(|s| s.as_str())
+        .unwrap_or("none");
 
     // Template presence + validity.
     if result.all_valid {
         out.push(Check::pass(
             "hook templates",
-            &format!("valid: {}", result.templates_found.join(", ")),
+            &format!(
+                "valid (source: {}): {}",
+                source_label,
+                result.templates_found.join(", ")
+            ),
         ));
     } else if result.templates_missing.is_empty() {
         // Should not happen, but be defensive.
@@ -421,9 +436,19 @@ fn check_hooks_section(cfg: &crate::config::Config) -> Vec<Check> {
     } else {
         out.push(Check::fail(
             "hook templates",
-            &format!("missing/invalid: {}", result.templates_missing.join("; ")),
+            &format!(
+                "missing/invalid (source: {}): {}",
+                source_label,
+                result.templates_missing.join("; ")
+            ),
         ));
     }
+
+    // Claude settings wiring is always manual — advisory note, not a gate.
+    out.push(Check::pass(
+        "Claude settings wiring",
+        "manual — AKAR does not edit ~/.claude/settings.json; run `akar hooks` for instructions",
+    ));
 
     out
 }
@@ -851,11 +876,12 @@ mod tests {
     }
 
     #[test]
-    fn missing_hook_template_is_fail() {
-        // Point project_root at a temp dir with no templates/hooks/ so the
-        // hook-template check fails.
+    fn doctor_passes_via_embedded_when_no_source_templates() {
+        // v0.25: a fresh external repo with no source-tree templates must PASS
+        // the hook-template check via the embedded fallback. This is the core
+        // fix for the v0.24 dogfood blocker (doctor used to FAIL here).
         let tmp = std::env::temp_dir().join(format!(
-            "akar_doctor_no_hooks_{}",
+            "akar_doctor_embedded_hooks_{}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&tmp);
@@ -864,14 +890,50 @@ mod tests {
             project_root: tmp.clone(),
             akar_dir: tmp.join(".akar"),
             global_dir: tmp.join("global"),
-            project_name: "no-hooks".to_string(),
+            project_name: "embedded-hooks".to_string(),
         };
         std::fs::create_dir_all(&cfg.akar_dir).unwrap();
         let report = run_doctor_report(&cfg);
         let ht = report.hooks.iter().find(|c| c.label == "hook templates").unwrap();
-        assert_eq!(ht.outcome, CheckOutcome::Fail, "missing hook templates must FAIL");
-        assert_eq!(report.status, DoctorStatus::Fail);
+        assert_eq!(
+            ht.outcome,
+            CheckOutcome::Pass,
+            "doctor must PASS via embedded templates: {}",
+            ht.detail
+        );
+        assert!(
+            ht.detail.contains("source:"),
+            "doctor must report the template source: {}",
+            ht.detail
+        );
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn doctor_accepts_installed_project_templates() {
+        // After `akar hooks --install`, the project .akar/hooks/ templates
+        // must be accepted by the doctor (source: project .akar/hooks).
+        let (cfg, dir) = cfg_with_temp_akar("doctor_installed_hooks");
+        let install = crate::hooks::install_hooks(&cfg, true);
+        assert!(!install.cancelled, "setup: install should succeed");
+        let report = run_doctor_report(&cfg);
+        let ht = report.hooks.iter().find(|c| c.label == "hook templates").unwrap();
+        assert_eq!(ht.outcome, CheckOutcome::Pass, "installed templates must PASS: {}", ht.detail);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn doctor_does_not_install_templates() {
+        // Running the doctor against a repo with no installed templates must
+        // NOT create .akar/hooks/ — it only validates (embedded fallback).
+        let (cfg, dir) = cfg_with_temp_akar("doctor_readonly_hooks");
+        let hooks_dir = dir.join("hooks");
+        let _report = run_doctor_report(&cfg);
+        assert!(
+            !hooks_dir.exists(),
+            "doctor must not create .akar/hooks/ (read-only — use akar hooks --install)"
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

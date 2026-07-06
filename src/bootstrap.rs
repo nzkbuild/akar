@@ -13,12 +13,16 @@ use crate::config;
 /// Outcome of a bootstrap run.
 #[derive(Debug, Default)]
 pub struct BootstrapResult {
-    /// Relative paths that were newly created.
+    /// Relative paths that were newly created (template files copied).
     pub created: Vec<String>,
     /// Relative paths that were skipped because the destination already existed.
     pub skipped: Vec<String>,
     /// Non-fatal errors and warnings accumulated during the run.
     pub warnings: Vec<String>,
+    /// True if `.akar/` was newly created by this run (v0.25 honesty fix).
+    pub akar_dir_created: bool,
+    /// True if `~/.claude/akar/` was newly created by this run.
+    pub global_dir_created: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -36,23 +40,32 @@ pub fn run_bootstrap(cfg: &config::Config) -> BootstrapResult {
     let mut result = BootstrapResult::default();
 
     // 1. Ensure .akar/ exists.
-    if let Err(e) = std::fs::create_dir_all(&cfg.akar_dir) {
-        result.warnings.push(format!(
-            "could not create akar_dir {}: {}",
-            cfg.akar_dir.display(),
-            e
-        ));
-        // Without the target dir we cannot copy anything useful, but keep going
-        // so global_dir still gets created.
+    if !cfg.akar_dir.exists() {
+        match std::fs::create_dir_all(&cfg.akar_dir) {
+            Ok(()) => result.akar_dir_created = true,
+            Err(e) => {
+                result.warnings.push(format!(
+                    "could not create akar_dir {}: {}",
+                    cfg.akar_dir.display(),
+                    e
+                ));
+                // Without the target dir we cannot copy anything useful, but keep going
+                // so global_dir still gets created.
+            }
+        }
     }
 
     // 2. Ensure ~/.claude/akar/ exists.
-    if let Err(e) = std::fs::create_dir_all(&cfg.global_dir) {
-        result.warnings.push(format!(
-            "could not create global_dir {}: {}",
-            cfg.global_dir.display(),
-            e
-        ));
+    if !cfg.global_dir.exists() {
+        if let Err(e) = std::fs::create_dir_all(&cfg.global_dir) {
+            result.warnings.push(format!(
+                "could not create global_dir {}: {}",
+                cfg.global_dir.display(),
+                e
+            ));
+        } else {
+            result.global_dir_created = true;
+        }
     }
 
     // 3. Find templates directory.
@@ -158,11 +171,19 @@ fn find_templates_dir(project_root: &Path) -> Option<PathBuf> {
 pub fn format_bootstrap_report(result: &BootstrapResult) -> String {
     let mut out = String::new();
 
-    out.push_str(&format!(
-        "bootstrap: {} created, {} skipped\n",
-        result.created.len(),
-        result.skipped.len()
-    ));
+    // Header: distinguish directory creation from template-file copy.
+    let mut header_parts = Vec::new();
+    if result.akar_dir_created {
+        header_parts.push(".akar/ created".to_string());
+    } else {
+        header_parts.push(".akar/ already present".to_string());
+    }
+    if result.global_dir_created {
+        header_parts.push("global dir created".to_string());
+    }
+    header_parts.push(format!("{} template file(s) created", result.created.len()));
+    header_parts.push(format!("{} skipped", result.skipped.len()));
+    out.push_str(&format!("bootstrap: {}\n", header_parts.join(", ")));
 
     if !result.created.is_empty() {
         out.push('\n');
@@ -337,12 +358,14 @@ mod tests {
             created: vec!["PROJECT_DNA.md".to_string(), "STATE.md".to_string()],
             skipped: vec!["LESSONS.md".to_string()],
             warnings: vec![],
+            akar_dir_created: true,
+            global_dir_created: false,
         };
 
         let report = format_bootstrap_report(&result);
 
         assert!(
-            report.contains("bootstrap: 2 created, 1 skipped"),
+            report.contains("bootstrap: .akar/ created, 2 template file(s) created, 1 skipped"),
             "header line wrong, got: {}",
             report
         );
@@ -354,11 +377,58 @@ mod tests {
     }
 
     #[test]
+    fn format_bootstrap_report_distinguishes_dir_creation_from_template_copy() {
+        // v0.25 honesty: when bootstrap creates .akar/ but copies 0 templates,
+        // the header must still say .akar/ was created (not "0 created, 0 skipped").
+        let result = BootstrapResult {
+            created: vec![],
+            skipped: vec![],
+            warnings: vec!["templates directory not found".to_string()],
+            akar_dir_created: true,
+            global_dir_created: false,
+        };
+        let report = format_bootstrap_report(&result);
+        assert!(
+            report.contains(".akar/ created"),
+            "header must report .akar/ creation: {}",
+            report
+        );
+        assert!(
+            report.contains("0 template file(s) created"),
+            "header must report 0 template files: {}",
+            report
+        );
+        assert!(
+            report.contains("templates directory not found"),
+            "warnings must be shown"
+        );
+    }
+
+    #[test]
+    fn format_bootstrap_report_says_already_present_when_dir_existed() {
+        let result = BootstrapResult {
+            created: vec![],
+            skipped: vec![],
+            warnings: vec![],
+            akar_dir_created: false,
+            global_dir_created: false,
+        };
+        let report = format_bootstrap_report(&result);
+        assert!(
+            report.contains(".akar/ already present"),
+            "header must say .akar/ already present: {}",
+            report
+        );
+    }
+
+    #[test]
     fn format_bootstrap_report_shows_warnings_when_present() {
         let result = BootstrapResult {
             created: vec![],
             skipped: vec![],
             warnings: vec!["templates directory not found".to_string()],
+            akar_dir_created: true,
+            global_dir_created: false,
         };
 
         let report = format_bootstrap_report(&result);

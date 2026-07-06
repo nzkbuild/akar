@@ -964,6 +964,7 @@ mod tests {
             templates_found: vec![],
             templates_missing: vec!["pre-tool-call.sh".to_string()],
             all_valid: false,
+            source: None,
         };
         let output = hooks::format_hooks_check(&result);
         assert!(

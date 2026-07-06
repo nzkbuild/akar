@@ -161,6 +161,22 @@ AKAR memory files are plain Markdown and forward-compatible: new versions add te
 
 ---
 
+## External repo setup
+
+To use AKAR in advisory mode on a repo that is not AKAR itself:
+
+1. Ensure `akar` is on PATH (`akar --version` works from any directory).
+2. In the target repo:
+   - `akar init` — bootstrap `.akar/` + doctor + next-steps guide
+   - `akar hooks --install` — write the embedded PreToolUse hook templates to `.akar/hooks/` (works without the AKAR source tree; never edits `~/.claude/settings.json`)
+   - manually wire Claude Code PreToolUse if not already wired globally (run `akar hooks` for the settings.json example)
+   - `akar hooks --check` — verify templates (source-tree, project `.akar/hooks/`, or embedded)
+   - `akar doctor` — read-only dogfood-readiness check
+
+`akar doctor` and `akar hooks --check` no longer FAIL on a fresh external repo just because the AKAR source-tree templates are absent — the embedded fallback covers it. To activate real PreToolUse enforcement, install the templates and register the hook in `~/.claude/settings.json` manually (AKAR never does this for you).
+
+---
+
 ## Troubleshooting
 
 | Command | Purpose |
