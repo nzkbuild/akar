@@ -208,9 +208,12 @@ fn cmd_init(skip: bool, claude_integration: bool) {
 fn cmd_status() {
     let cfg = config::Config::discover();
 
-    // Doctor state
-    let issues = doctor::run_checks(&cfg);
-    let doctor_state = if issues.is_empty() { "OK" } else { "DEGRADED" };
+    // Doctor state — DEGRADED only on a hard FAIL (Warn is advisory, not degradation).
+    let doctor_report = doctor::run_doctor_report(&cfg);
+    let doctor_state = match doctor_report.status {
+        doctor::DoctorStatus::Ok | doctor::DoctorStatus::Warn => "OK",
+        doctor::DoctorStatus::Fail => "DEGRADED",
+    };
 
     // Bootstrap state
     let bootstrap_state = if cfg.akar_dir.exists() { "OK" } else { "not bootstrapped" };
@@ -246,7 +249,10 @@ fn cmd_status() {
     // Baseline loop readiness (read-only git check)
     let readiness = diff_budget::check_loop_readiness(&cfg.project_root, &cfg.akar_dir);
 
-    let health = if issues.is_empty() { "HEALTHY" } else { "DEGRADED" };
+    let health = match doctor_report.status {
+        doctor::DoctorStatus::Ok | doctor::DoctorStatus::Warn => "HEALTHY",
+        doctor::DoctorStatus::Fail => "DEGRADED",
+    };
     println!("status: {}", health);
     println!("  runtime:    akar {}", VERSION);
     println!("  project:    {}", cfg.project_name);
@@ -269,10 +275,17 @@ fn cmd_status() {
     let governor = loop_governor::decide(&cfg);
     print!("{}", loop_governor::format_loop_governor(&governor));
 
+    // Surface doctor findings (failures first, then warnings). Only FAILs make
+    // status DEGRADED; warnings are advisory and listed for visibility.
+    let issues = doctor_report.to_issues();
     if !issues.is_empty() {
-        println!("  issues:");
+        println!("  doctor findings:");
         for issue in &issues {
-            println!("    - {}", issue.message);
+            let sev = match issue.severity {
+                doctor::Severity::Error => "FAIL",
+                doctor::Severity::Warning => "WARN",
+            };
+            println!("    [{}] {}", sev, issue.message);
         }
     }
 }
@@ -336,52 +349,34 @@ fn cmd_run(prompt: &str, used: Option<u64>, limit: Option<u64>) {
 
 fn cmd_doctor(fix_mode: bool) {
     let cfg = config::Config::discover();
-    let issues = doctor::run_checks(&cfg);
-
-    if issues.is_empty() {
-        println!("doctor: OK");
-        return;
-    }
-
-    println!(
-        "doctor: {} issue(s) found{}",
-        issues.len(),
-        if fix_mode { " — applying safe fixes" } else { "" }
-    );
-
-    for issue in &issues {
-        let severity = match issue.severity {
-            doctor::Severity::Error => "ERROR",
-            doctor::Severity::Warning => "WARN",
-            doctor::Severity::Info => "INFO",
-        };
-        println!("  [{}] {}", severity, issue.message);
-    }
+    let report = doctor::run_doctor_report(&cfg);
+    print!("{}", doctor::format_doctor_report(&report));
 
     if !fix_mode {
-        println!("  hint: run 'akar doctor --fix' to apply safe fixes");
+        // Read-only mode. The report's recommendations already list what to do.
+        if matches!(report.status, doctor::DoctorStatus::Fail) {
+            process::exit(1);
+        }
         return;
     }
 
-    // --fix mode: build a SafeFix for each fixable issue and apply it.
-    // Template dir defaults to the project .akar/templates directory.
-    let template_dir = cfg.akar_dir.join("templates");
-
-    println!();
+    // `akar doctor --fix` is intentionally limited. It can apply only the
+    // pre-existing safe directory creation (via safe_fix). It does NOT modify
+    // Claude Code settings, install hooks, mutate git, rewrite NEXT_RUN.md,
+    // resolve learning patches, delete logs, or auto-fix malformed files.
+    // Dogfood-critical checks (invalid NEXT_RUN, malformed telemetry logs,
+    // missing hook templates, no git repo) have no auto-fix and require human
+    // action — the report's recommendations state what to do.
     println!("fixes:");
+    let template_dir = cfg.akar_dir.join("templates");
     let mut fixed = 0usize;
     let mut failed = 0usize;
+    let mut skipped = 0usize;
 
-    for issue in &issues {
+    for issue in &report.to_issues() {
         let fix = match &issue.fix_hint {
             Some(doctor::FixHint::CreateDir(path)) => {
                 Some(safe_fix::SafeFix::CreateMissingDir(path.clone()))
-            }
-            Some(doctor::FixHint::CreateFromTemplate { dest, template_name }) => {
-                Some(safe_fix::SafeFix::CreateMissingTemplate {
-                    dest: dest.clone(),
-                    template_name: template_name.clone(),
-                })
             }
             None => None,
         };
@@ -398,20 +393,19 @@ fn cmd_doctor(fix_mode: bool) {
                 }
             },
             None => {
-                println!("  skip: no automatic fix for: {}", issue.message);
+                println!("  skip: no auto-fix for: {} (requires human action)", issue.message);
+                skipped += 1;
             }
         }
     }
 
     println!();
     println!(
-        "doctor --fix: {} fixed, {} failed, {} skipped",
-        fixed,
-        failed,
-        issues.len() - fixed - failed
+        "doctor --fix: {} fixed, {} failed, {} skipped (no Claude settings/hooks/git changed)",
+        fixed, failed, skipped
     );
 
-    if failed > 0 {
+    if failed > 0 || matches!(report.status, doctor::DoctorStatus::Fail) {
         process::exit(1);
     }
 }

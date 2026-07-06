@@ -1,9 +1,11 @@
 //! Phase 16: Eval Harness
 //!
-//! Runs a suite of 20 behavioural evals across the core AKAR modules and
-//! reports pass/fail results with detail strings.
+//! Runs a suite of 28 behavioural evals across the core AKAR modules and
+//! reports pass/fail results with detail strings. Several evals are labelled
+//! `_smoke` — they are regression smoke checks, not behavior proofs; the
+//! detail string says so explicitly.
 
-use crate::{backup, config, context_pack, contract, design, doctor, event_log, safety, skill_registry, verify, workflow};
+use crate::{backup, config, context_pack, contract, design, doctor, event_log, request_intelligence, safety, skill_registry, verify, workflow};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,14 +46,30 @@ pub fn run_evals(cfg: &config::Config) -> EvalSuite {
 
     // ---- Contract evals -------------------------------------------------------
 
-    // 1. vague_prompt_contract
+    // 1. vague_prompt_contract — a vague prompt must still yield a COMPLETE
+    // contract with sensible defaults (non-zero diff budget, a recognized
+    // task type, A5 autonomy). Proves classify_prompt degrades gracefully.
     {
         let c = contract::classify_prompt("make this better");
-        let passed = true; // classify_prompt always returns a contract
+        let has_budget = c.diff_budget.files_max > 0 && c.diff_budget.loc_max > 0;
+        let recognized_type = matches!(
+            c.task_type,
+            contract::TaskType::Bugfix
+                | contract::TaskType::Frontend
+                | contract::TaskType::Feature
+                | contract::TaskType::Refactor
+                | contract::TaskType::Security
+                | contract::TaskType::Migration
+                | contract::TaskType::Dependency
+        );
+        let passed = has_budget && recognized_type && c.autonomy == contract::Autonomy::A5;
         results.push(eval(
             "vague_prompt_contract",
             passed,
-            &format!("task_type={:?}", c.task_type),
+            &format!(
+                "task_type={:?} budget={}f/{}loc autonomy={:?} (complete+defaults)",
+                c.task_type, c.diff_budget.files_max, c.diff_budget.loc_max, c.autonomy
+            ),
         ));
     }
 
@@ -201,43 +219,81 @@ pub fn run_evals(cfg: &config::Config) -> EvalSuite {
 
     // ---- Doctor eval ----------------------------------------------------------
 
-    // 14. doctor_check
+    // 14. doctor_check — the doctor must run real checks and produce a
+    // sectioned report with a valid OK/WARN/FAIL status. On the real repo it
+    // must not FAIL (a FAIL means a dogfood-critical problem: invalid
+    // NEXT_RUN, missing hook templates, malformed logs, or no git repo).
     {
-        let _issues = doctor::run_checks(cfg);
-        // If we get here without panic, it passes.
+        let report = doctor::run_doctor_report(cfg);
+        let valid_status = matches!(
+            report.status,
+            doctor::DoctorStatus::Ok | doctor::DoctorStatus::Warn | doctor::DoctorStatus::Fail
+        );
+        let has_sections = !report.environment.is_empty()
+            && !report.files.is_empty()
+            && !report.hooks.is_empty()
+            && !report.telemetry.is_empty()
+            && !report.git.is_empty()
+            && !report.next_run.is_empty();
+        // On the real AKAR repo (bootstrapped, git, valid NEXT_RUN), the
+        // doctor must be OK or WARN — never FAIL.
+        let not_failed_on_real_repo = report.status != doctor::DoctorStatus::Fail;
+        let passed = valid_status && has_sections && not_failed_on_real_repo;
         results.push(eval(
             "doctor_check",
-            true,
-            &format!("{} issue(s)", _issues.len()),
+            passed,
+            &format!(
+                "status={} sections={} findings={} (real checks, not just non-panic)",
+                report.status.as_str(),
+                has_sections,
+                report.to_issues().len()
+            ),
         ));
     }
 
     // ---- Context pack eval ----------------------------------------------------
 
-    // 15. context_pack_build
+    // 15. context_pack_build — the pack must be internally consistent:
+    // total_files must equal files.len(), and every listed file must exist
+    // on disk (the pack must not list missing files). Proves the pack is
+    // well-formed, not just non-panicking.
     {
         let pack = context_pack::build_pack(cfg);
-        let passed = pack.total_files as isize >= 0; // always true; confirms no panic
+        let count_consistent = pack.total_files == pack.files.len();
+        let all_exist = pack.files.iter().all(|f| f.path.exists());
+        let passed = count_consistent && all_exist;
         results.push(eval(
             "context_pack_build",
             passed,
-            &format!("total_files={}", pack.total_files),
+            &format!(
+                "total_files={} count_consistent={} all_exist={} (real invariants)",
+                pack.total_files, count_consistent, all_exist
+            ),
         ));
     }
 
     // ---- Design eval ----------------------------------------------------------
 
-    // 16. design_check
+    // 16. design_check — the report's has_design_dna flag must match whether
+    // .akar/DESIGN_DNA.md actually exists, and a missing DNA must produce
+    // exactly the design_dna_missing warning. Proves the check reflects
+    // reality, not just that it ran.
     {
         let report = design::check_project(&cfg.project_root);
-        // Passes if it ran without panicking.
+        let dna_exists = cfg.akar_dir.join("DESIGN_DNA.md").exists();
+        let flag_matches = report.has_design_dna == dna_exists;
+        let issues_consistent = if dna_exists {
+            report.issues.is_empty()
+        } else {
+            report.issues.iter().any(|i| i.check == "design_dna_missing")
+        };
+        let passed = flag_matches && issues_consistent;
         results.push(eval(
             "design_check",
-            true,
+            passed,
             &format!(
-                "has_design_dna={} issues={}",
-                report.has_design_dna,
-                report.issues.len()
+                "has_design_dna={} dna_exists={} issues={} (flag matches reality)",
+                report.has_design_dna, dna_exists, report.issues.len()
             ),
         ));
     }
@@ -412,27 +468,47 @@ pub fn run_evals(cfg: &config::Config) -> EvalSuite {
         ));
     }
 
-    // 22. no_all_skills_mode
+    // 22. no_all_skills_mode (smoke) — scan_skills on a nonexistent directory
+    // must return an empty list (no crash, no phantom skills). This is a
+    // regression smoke check, not a behavior proof; the detail says so.
     {
         use std::path::PathBuf;
         let fake_dir = PathBuf::from("/nonexistent/akar/eval/skills/path");
         let skills = skill_registry::scan_skills(&fake_dir);
         let passed = skills.is_empty();
         results.push(eval(
-            "no_all_skills_mode",
+            "no_all_skills_mode_smoke",
             passed,
-            &format!("scan returned {} skills for nonexistent dir", skills.len()),
+            &format!(
+                "smoke: scan returned {} skills for nonexistent dir (empty == no phantom skills)",
+                skills.len()
+            ),
         ));
     }
 
-    // 23. request_pressure_compaction
+    // 23. request_pressure_compaction — at 70% request pressure, build_advisory
+    // must actually return PressureMode::Compact and the strategy must mention
+    // compaction. Proves real pressure-mode output, not a tautology.
     {
-        let pressure_mode = "compact";
-        let passed = pressure_mode != "stop";
+        let signals = request_intelligence::RequestSignals {
+            used: Some(700),
+            limit: Some(1000),
+            prompt: None,
+        };
+        let advisory = request_intelligence::build_advisory(cfg, &signals);
+        let mode_is_compact = advisory.mode == request_intelligence::PressureMode::Compact;
+        let strategy_mentions_compact = advisory
+            .strategy
+            .iter()
+            .any(|s| s.to_lowercase().contains("compact"));
+        let passed = mode_is_compact && strategy_mentions_compact;
         results.push(eval(
             "request_pressure_compaction",
             passed,
-            &format!("pressure_mode='{}' is not 'stop'", pressure_mode),
+            &format!(
+                "mode={:?} strategy_mentions_compact={} (real pressure output)",
+                advisory.mode, strategy_mentions_compact
+            ),
         ));
     }
 

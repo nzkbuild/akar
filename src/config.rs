@@ -46,6 +46,11 @@ impl Config {
 
     /// Check whether key directories exist. Returns a list of human-readable issues.
     /// An empty list means everything looks healthy.
+    ///
+    /// Note: the v0.23 doctor now performs its own granular environment checks
+    /// (`doctor::check_environment`) rather than calling this. This method is
+    /// retained as a small public Config API exercised by unit tests.
+    #[allow(dead_code)]
     pub fn validate(&self) -> Vec<String> {
         let mut issues = Vec::new();
 

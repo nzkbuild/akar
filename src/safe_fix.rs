@@ -15,6 +15,14 @@ pub enum SafeFix {
     CreateMissingDir(PathBuf),
     /// Copy a template file from `template_dir/<template_name>` to `dest`.
     /// Backs up `dest` first if it already exists.
+    ///
+    /// Note: as of v0.23, `doctor --fix` no longer constructs this variant —
+    /// missing hook templates are reported as a FAIL requiring human action
+    /// (the doctor does not auto-install hooks). The variant and its
+    /// `apply_safe_fix` handling are retained because the logic is tested and
+    /// correct, and a future doctor revision may restore template-restore
+    /// fixes behind explicit confirmation.
+    #[allow(dead_code)]
     CreateMissingTemplate {
         dest: PathBuf,
         template_name: String,

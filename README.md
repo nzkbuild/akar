@@ -231,6 +231,40 @@ AKAR does not clean, stash, commit, reset, or revert for you.
 
 ---
 
+## Doctor
+
+`akar doctor` is a **read-only** dogfood-readiness check. It verifies AKAR is ready for advisory dogfood **without modifying files or configuration** and prints a sectioned report:
+
+- **environment** — project root detected, `.akar/` exists and is writable, `akar` visible on PATH
+- **files** — `NEXT_RUN.md` present, `DIFF_BASELINE.json` present/valid, `LEARNING_PATCHES.md` summary
+- **hooks** — `templates/hooks/pre-tool-call.{sh,ps1}` exist and are valid (the internal equivalent of `akar hooks --check`)
+- **telemetry** — `EVENT_LOG.jsonl` and `HOOK_EVENTS.jsonl` parseable (structural JSON check)
+- **git** — repository detected, working-tree clean/dirty, `Cargo.toml` present
+- **next-run** — `NEXT_RUN.md` passes the request validator if present
+- **recommendations** — advisory list of what to do
+
+### OK / WARN / FAIL semantics
+
+- **OK** — no failed checks. Advisory dogfood can proceed.
+- **WARN** — dogfood is possible but something advisory is missing (e.g. no baseline snapshot, no `NEXT_RUN.md`, dirty tree, active split-rule learning patch). No check that gates safety failed.
+- **FAIL** — dogfood should stop: invalid `NEXT_RUN.md`, missing hook templates, malformed telemetry logs, or no git repository.
+
+### Read-only guarantees
+
+`akar doctor` never:
+
+- creates `.akar/` or any directory,
+- writes or rewrites `NEXT_RUN.md` (it validates an existing file only),
+- resolves learning patches,
+- installs hooks or modifies `~/.claude/settings.json`,
+- mutates git,
+- deletes or truncates logs,
+- auto-fixes malformed files.
+
+`akar doctor --fix` is intentionally limited. It can apply only the pre-existing safe directory creation (creating a missing `.akar/`). It does **not** modify Claude settings, install hooks, mutate git, rewrite `NEXT_RUN.md`, resolve patches, or auto-fix malformed files — dogfood-critical checks (invalid `NEXT_RUN.md`, malformed logs, missing hook templates, no git repo) require human action. `akar hooks --check` remains the dedicated hook-template validity check.
+
+---
+
 ## Development approach
 
 AKAR is developed using loop engineering: small scoped AI-assisted iterations with human audit, verification, and architecture freeze. Each release proves one thing. No release bumps the version until build and tests pass and the diff has been reviewed.
@@ -289,8 +323,8 @@ akar learn              — propose a learning note if needed
 | `akar init --claude` | Onboarding with Claude Code integration instructions |
 | `akar status` | Runtime health at a glance |
 | `akar bootstrap` | Initialise `.akar/` with memory templates |
-| `akar doctor` | Read-only health check |
-| `akar doctor --fix` | Apply safe reversible fixes |
+| `akar doctor` | Read-only dogfood-readiness check (environment, files, hooks, telemetry, git, next-run; OK/WARN/FAIL) |
+| `akar doctor --fix` | Apply only safe directory creation; no auto-fix for dogfood-critical checks |
 | `akar preflight "<task>"` | Strategy review before acting |
 | `akar run "<task>"` | Advisory scaffold only: preflight → mission → postmortem (prints strategy + records telemetry; does not execute, edit files, call models, or run the mission) |
 | `akar mission "<task>"` | Advisory/report-only scaffold: walks the state machine in scaffold mode (no code executed) |
