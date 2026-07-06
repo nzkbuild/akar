@@ -18,7 +18,7 @@
 
 use std::path::Path;
 
-use crate::{config, diff_budget, foundation};
+use crate::{config, diff_budget, foundation, learn};
 
 // ---------------------------------------------------------------------------
 // Loop decision
@@ -279,15 +279,14 @@ pub fn repeated_blocked_command(hook_log: &Path) -> Option<String> {
 // LEARNING_PATCHES.md scanning (read-only)
 // ---------------------------------------------------------------------------
 
-/// True if `.akar/LEARNING_PATCHES.md` contains the split-rule marker:
-/// `Next prompt must reduce scope or split the task.`
-/// Returns false if the file is absent or unreadable. Never panics.
+/// True if `.akar/LEARNING_PATCHES.md` contains an ACTIVE split-rule entry.
+///
+/// v0.14.0 lifecycle: resolved split-rule entries no longer trigger
+/// SPLIT_TASK. Only entries that are not `status: resolved` and contain the
+/// split-rule marker count. Returns false if the file is absent or unreadable.
+/// Never panics.
 pub fn learning_patches_require_split(path: &Path) -> bool {
-    let content = match std::fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(_) => return false,
-    };
-    content.contains("Next prompt must reduce scope or split the task.")
+    learn::has_active_split_rule_entry(path)
 }
 
 // ---------------------------------------------------------------------------
@@ -389,14 +388,15 @@ pub fn decide(cfg: &config::Config) -> LoopGovernorReport {
         };
     }
 
-    // --- Rule D: learning patches require a scope split. ---
+    // --- Rule D: an ACTIVE split-rule learning patch entry requires a split. ---
+    // Resolved entries are intentionally ignored (v0.14.0 lifecycle).
     if learning_patches_require_split(&patches_path) {
         evidence.push(
-            "LEARNING_PATCHES.md: split-rule marker present".to_string(),
+            "LEARNING_PATCHES.md: active split-rule entry present".to_string(),
         );
         return LoopGovernorReport {
             decision: LoopDecision::SplitTask,
-            reason: "LEARNING_PATCHES.md requires reducing scope or splitting the task"
+            reason: "active split-rule entry in LEARNING_PATCHES.md requires reducing scope or splitting the task"
                 .to_string(),
             next_action: split_next_action(),
             suggested_prompt: split_prompt().to_string(),
@@ -703,6 +703,54 @@ mod tests {
         let report = decide(&cfg);
         assert_eq!(report.decision, LoopDecision::SplitTask);
         assert!(report.suggested_prompt.contains("smaller single-purpose"));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn resolved_split_rule_does_not_produce_split_task() {
+        let dir = fresh_akar_dir("split_resolved");
+        write_file(
+            &dir,
+            "LEARNING_PATCHES.md",
+            "# Patches\n## LP-1\n- rule: Next prompt must reduce scope or split the task.\n- status: resolved\n- resolved_at: 2026-07-06T00:00:00Z\n",
+        );
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        assert_ne!(
+            report.decision,
+            LoopDecision::SplitTask,
+            "resolved split-rule entries must not trigger SPLIT_TASK"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn governor_no_longer_reports_split_task_after_active_entries_resolved() {
+        let dir = fresh_akar_dir("split_after_resolve");
+        write_file(
+            &dir,
+            "LEARNING_PATCHES.md",
+            "# Patches\n## LP-1\n- rule: Next prompt must reduce scope or split the task.\n- status: active\n",
+        );
+        let patches_path = dir.join("LEARNING_PATCHES.md");
+        let cfg = cfg_with_akar_dir(dir.clone());
+
+        // Before resolve: SPLIT_TASK fires.
+        let before = decide(&cfg);
+        assert_eq!(before.decision, LoopDecision::SplitTask);
+
+        // Resolve active entries in place.
+        let count = learn::resolve_active_patches(&patches_path, "2026-07-06T12:00:00Z");
+        assert_eq!(count, Some(1));
+
+        // After resolve: SPLIT_TASK no longer fires.
+        let after = decide(&cfg);
+        assert_ne!(
+            after.decision,
+            LoopDecision::SplitTask,
+            "governor must not report SPLIT_TASK after active entries are resolved"
+        );
+
         fs::remove_dir_all(&dir).ok();
     }
 

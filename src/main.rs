@@ -89,7 +89,11 @@ fn main() {
             cmd_postmortem(diff_mode, baseline_mode, task_name);
         }
         "telemetry" => cmd_telemetry(),
-        "learn" => cmd_learn(),
+        "learn" => {
+            let list_mode = args.iter().any(|a| a == "--list");
+            let resolve_mode = args.iter().any(|a| a == "--resolve");
+            cmd_learn(list_mode, resolve_mode);
+        }
         "run" => {
             let prompt_args: Vec<&str> = args[2..].iter()
                 .take_while(|s| !s.starts_with("--"))
@@ -607,7 +611,7 @@ fn write_diff_learning_patch(
         - actual: {af} files, {al} total changed LOC\n\
         - exceeded: {reason}\n\
         - rule: Next prompt must reduce scope or split the task.\n\
-        - status: proposed\n",
+        - status: active\n",
         ts = ts,
         project = cfg.project_name,
         task = task,
@@ -627,8 +631,38 @@ fn write_diff_learning_patch(
     }
 }
 
-fn cmd_learn() {
+fn cmd_learn(list_mode: bool, resolve_mode: bool) {
     let cfg = config::Config::discover();
+
+    if list_mode {
+        let patch_path = cfg.akar_dir.join("LEARNING_PATCHES.md");
+        print!("{}", learn::format_patch_list(&patch_path));
+        return;
+    }
+
+    if resolve_mode {
+        let patch_path = cfg.akar_dir.join("LEARNING_PATCHES.md");
+        let now = event_log::now_iso8601();
+        match learn::resolve_active_patches(&patch_path, &now) {
+            None => {
+                println!("learn --resolve: no LEARNING_PATCHES.md found");
+                println!("  nothing to resolve.");
+            }
+            Some(0) => {
+                println!("learn --resolve: no active entries found");
+                println!("  file: {}", patch_path.display());
+                println!("  all entries are already resolved.");
+            }
+            Some(n) => {
+                println!("learn --resolve: {} active entr{} resolved", n, if n == 1 { "y" } else { "ies" });
+                println!("  file: {}", patch_path.display());
+                println!("  resolved_at: {}", now);
+                println!("  resolved entries stay recorded but no longer affect the loop governor.");
+            }
+        }
+        return;
+    }
+
     let result = learn::run_learn(&cfg);
     print!("{}", learn::format_learn_result(&result));
 }

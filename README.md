@@ -74,6 +74,37 @@ The decision surfaces in `akar status` (under `loop governor:`) and in `akar req
 
 ---
 
+## Learning patch lifecycle
+
+AKAR v0.14.0 gives learning patches a status so stale `.akar/LEARNING_PATCHES.md` entries stop forcing `SPLIT_TASK` forever while useful unresolved lessons are preserved.
+
+Each learning patch entry may carry a status line:
+
+- `status: active` — a live lesson that can affect the loop governor
+- `status: resolved` — a retired lesson that stays recorded but no longer influences governor decisions
+
+Defaults:
+
+- old entries without a status line are treated as active
+- old entries with `status: proposed` are treated as active
+- active split-rule entries may trigger `SPLIT_TASK`
+- resolved split-rule entries must not trigger `SPLIT_TASK`
+
+New budget-exceeded patches are written with `status: active`.
+
+Commands:
+
+- `akar learn --list` — prints the count of active and resolved entries and whether any active split-rule entry can affect the loop governor (read-only)
+- `akar learn --resolve` — marks every active entry `status: resolved` with a `resolved_at` timestamp, prints how many were resolved, and leaves the file in place
+
+- learning patches are advisory
+- active patches can affect the loop governor
+- resolved patches stay recorded but stop influencing governor decisions
+- AKAR does not auto-apply learning patches
+- AKAR does not delete learning patches or project source files
+
+---
+
 ## What it does not do
 
 - It is not an AI model
