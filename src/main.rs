@@ -151,7 +151,19 @@ fn main() {
             let used = parse_flag_u64(&args, "--used");
             let limit = parse_flag_u64(&args, "--limit");
             let prompt = parse_flag_str(&args, "--prompt");
-            cmd_request(used, limit, prompt);
+            // Task text (v0.26.0): `akar request "task"` (positional) or
+            // `akar request --task "task"`. Advisory context only — threaded
+            // into NEXT_RUN; never overrides governor safety.
+            let task = parse_flag_str(&args, "--task").or_else(|| {
+                args.get(2).and_then(|first| {
+                    if first.starts_with("--") {
+                        None
+                    } else {
+                        Some(first.clone())
+                    }
+                })
+            });
+            cmd_request(used, limit, prompt, task);
         }
         other => {
             eprintln!("akar: unknown command '{}'", other);
@@ -756,6 +768,13 @@ fn cmd_preflight(prompt: &str, used: Option<u64>, limit: Option<u64>, snapshot: 
                 eprintln!("preflight --snapshot: working tree is dirty");
                 eprintln!("  AKAR needs a clean baseline to measure session work.");
                 eprintln!("  Commit or stash changes first, then run preflight --snapshot.");
+                // v0.26 dogfood advisory: cargo test/build can generate or
+                // change Cargo.lock, which is a common cause of a dirty tree
+                // right before a snapshot. AKAR will NOT auto-ignore, delete,
+                // or commit Cargo.lock — the user must decide intentionally.
+                if let Some(advisory) = cargo_lock_dirty_advisory(&cfg.project_root) {
+                    eprintln!("  {}", advisory);
+                }
                 process::exit(1);
             }
             Ok(true) => {}
@@ -802,7 +821,7 @@ fn cmd_preflight(prompt: &str, used: Option<u64>, limit: Option<u64>, snapshot: 
     }
 }
 
-fn cmd_request(used: Option<u64>, limit: Option<u64>, prompt: Option<String>) {
+fn cmd_request(used: Option<u64>, limit: Option<u64>, prompt: Option<String>, task: Option<String>) {
     let cfg = config::Config::discover();
     let signals = request_intelligence::RequestSignals { used, limit, prompt };
     let advisory = request_intelligence::build_advisory(&cfg, &signals);
@@ -818,10 +837,13 @@ fn cmd_request(used: Option<u64>, limit: Option<u64>, prompt: Option<String>) {
     // §7c.3), so its "never overwrite" guard was moot and its output was
     // always discarded. `akar request --check` is read-only and does not
     // write; `akar governor` does not write NEXT_RUN.md.
+    //
+    // v0.26.0: an optional task text is threaded into NEXT_RUN as advisory
+    // context (Current State + Objective). It never overrides governor safety.
     let governor = loop_governor::decide(&cfg);
     println!();
     print!("{}", loop_governor::format_loop_governor(&governor));
-    if let Some(path) = loop_governor::write_governor_next_run(&cfg, &governor) {
+    if let Some(path) = loop_governor::write_governor_next_run(&cfg, &governor, task.as_deref()) {
         println!("  wrote: {}", path.display());
     }
 }
@@ -864,6 +886,50 @@ fn parse_flag_str(args: &[String], flag: &str) -> Option<String> {
     args.windows(2)
         .find(|w| w[0] == flag)
         .map(|w| w[1].clone())
+}
+
+/// v0.26 dogfood advisory (read-only): if the working tree is dirty ONLY
+/// because of `Cargo.lock` and `Cargo.toml` exists, return a clear advisory
+/// telling the user to review/commit `Cargo.lock` intentionally. Returns
+/// `None` if the dirty set is anything else (so the generic dirty-tree
+/// message stands on its own).
+///
+/// AKAR will NOT auto-ignore, auto-delete, or auto-commit `Cargo.lock`. The
+/// snapshot still refuses a dirty tree regardless.
+fn cargo_lock_dirty_advisory(project_root: &std::path::Path) -> Option<String> {
+    if !project_root.join("Cargo.toml").exists() {
+        return None;
+    }
+    let out = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(project_root)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let porcelain = String::from_utf8_lossy(&out.stdout);
+    let dirty_files: Vec<&str> = porcelain
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.trim_start_matches(" ").split_whitespace().last().unwrap_or(""))
+        .filter(|f| !f.is_empty())
+        .collect();
+    if dirty_files.is_empty() {
+        return None;
+    }
+    // Only advise when Cargo.lock is the sole dirty file.
+    let only_cargo_lock = dirty_files.len() == 1
+        && (dirty_files[0] == "Cargo.lock" || dirty_files[0].ends_with("/Cargo.lock"));
+    if !only_cargo_lock {
+        return None;
+    }
+    Some(
+        "Cargo.lock changed or was generated. Review and commit it intentionally \
+         before snapshot, or remove it only if it is truly unwanted. \
+         AKAR will not decide for you."
+            .to_string(),
+    )
 }
 
 fn cmd_telemetry() {
@@ -971,5 +1037,80 @@ mod tests {
             output.contains("PATH") || output.contains("restart") || output.contains("guidance"),
             "hooks check FAIL output must include hook broken guidance"
         );
+    }
+
+    // -- v0.26: Cargo.lock dirty-tree advisory --------------------------------
+
+    /// Create a fresh temp git repo with an initial commit. Returns its path.
+    fn temp_git_repo(label: &str) -> std::path::PathBuf {
+        use std::process::Command;
+        let dir = std::env::temp_dir().join(format!(
+            "akar_cargolock_{}_{}",
+            label,
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        Command::new("git").args(["init", "-q"]).current_dir(&dir).status().unwrap();
+        Command::new("git").args(["config", "user.email", "t@t"]).current_dir(&dir).status().unwrap();
+        Command::new("git").args(["config", "user.name", "t"]).current_dir(&dir).status().unwrap();
+        std::fs::write(dir.join("README.md"), "init\n").unwrap();
+        Command::new("git").args(["add", "-A"]).current_dir(&dir).status().unwrap();
+        Command::new("git").args(["commit", "-q", "-m", "init"]).current_dir(&dir).status().unwrap();
+        dir
+    }
+
+    #[test]
+    fn cargolock_advisory_fires_when_only_cargolock_is_dirty() {
+        let dir = temp_git_repo("only_lock");
+        // Cargo.toml committed as part of the baseline; Cargo.lock newly generated (untracked).
+        use std::process::Command;
+        std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"x\"\nversion = \"0.1.0\"\n").unwrap();
+        Command::new("git").args(["add", "-A"]).current_dir(&dir).status().unwrap();
+        Command::new("git").args(["commit", "-q", "-m", "add cargo toml"]).current_dir(&dir).status().unwrap();
+        std::fs::write(dir.join("Cargo.lock"), "# lock\n").unwrap();
+        let advisory = cargo_lock_dirty_advisory(&dir);
+        assert!(advisory.is_some(), "advisory should fire when only Cargo.lock is dirty");
+        let msg = advisory.unwrap();
+        assert!(msg.contains("Cargo.lock"), "advisory must mention Cargo.lock: {}", msg);
+        assert!(msg.contains("AKAR will not decide"), "advisory must say AKAR will not decide: {}", msg);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn cargolock_advisory_does_not_fire_when_other_files_dirty() {
+        let dir = temp_git_repo("other_dirty");
+        std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+        std::fs::write(dir.join("Cargo.lock"), "# lock\n").unwrap();
+        // An additional dirty file besides Cargo.lock.
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+        let advisory = cargo_lock_dirty_advisory(&dir);
+        assert!(advisory.is_none(), "advisory must NOT fire when other files are also dirty");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn cargolock_advisory_does_not_fire_without_cargo_toml() {
+        let dir = temp_git_repo("no_toml");
+        // Cargo.lock dirty but no Cargo.toml — not a Rust project.
+        std::fs::write(dir.join("Cargo.lock"), "# lock\n").unwrap();
+        let advisory = cargo_lock_dirty_advisory(&dir);
+        assert!(advisory.is_none(), "advisory must NOT fire without Cargo.toml");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn cargolock_advisory_does_not_fire_on_clean_tree() {
+        let dir = temp_git_repo("clean");
+        std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+        std::fs::write(dir.join("Cargo.lock"), "# lock\n").unwrap();
+        // Commit both so the tree is clean.
+        use std::process::Command;
+        Command::new("git").args(["add", "-A"]).current_dir(&dir).status().unwrap();
+        Command::new("git").args(["commit", "-q", "-m", "add lock"]).current_dir(&dir).status().unwrap();
+        let advisory = cargo_lock_dirty_advisory(&dir);
+        assert!(advisory.is_none(), "advisory must NOT fire on a clean tree");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

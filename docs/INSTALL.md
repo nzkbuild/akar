@@ -175,6 +175,16 @@ To use AKAR in advisory mode on a repo that is not AKAR itself:
 
 `akar doctor` and `akar hooks --check` no longer FAIL on a fresh external repo just because the AKAR source-tree templates are absent — the embedded fallback covers it. To activate real PreToolUse enforcement, install the templates and register the hook in `~/.claude/settings.json` manually (AKAR never does this for you).
 
+### Recommended dogfood command
+
+Once bootstrapped, the recommended shape for starting a session is to pass the actual task straight to `akar request` so the compiled `.akar/NEXT_RUN.md` prompt is self-describing instead of generic:
+
+```
+akar request "fix one small failing test"
+```
+
+Hand the resulting `.akar/NEXT_RUN.md` to Claude as-is. Run `akar request --check` afterward if you want to validate the prompt before handing it off.
+
 ---
 
 ## Troubleshooting

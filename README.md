@@ -153,6 +153,26 @@ The validator checks:
 
 It prints `NEXT_RUN check: PASS` (exit 0) or `NEXT_RUN check: FAIL` with one reason per line (exit non-zero). The validator is read-only — it does not write, regenerate, or auto-fix `.akar/NEXT_RUN.md`.
 
+### Threading a task into the next-run prompt
+
+`akar request` accepts the task you're about to hand Claude, so the compiled prompt is self-describing instead of generic:
+
+```
+akar request "fix one small failing test"
+akar request --task "fix one small failing test"
+```
+
+Both forms compile the same `.akar/NEXT_RUN.md`. Omitting the task preserves the original generic prompt.
+
+The task text is advisory context only:
+
+- it is redacted (secrets stripped) and collapsed to one line before being written
+- it appears in `## Current State` (`requested task:`) and in `## Objective`
+- for `READY`, `SNAPSHOT_NOW`, `RUN_POSTMORTEM`, `COMMIT_CHECKPOINT`, and `SPLIT_TASK`, it is appended to the objective as `- Task: <text>`
+- for stop-class decisions (`STOP_HOOK_BROKEN`, `STOP_REPEATED_BLOCK`, `UNKNOWN`), the governor's blocker stays the primary objective and the task is listed as `- Requested task after the blocker is resolved: <text>` — the task never overrides governor safety
+
+`akar request --check` validates task-threaded prompts the same way it validates generic ones — the task text does not change the contract.
+
 ---
 
 ## Learning patch lifecycle

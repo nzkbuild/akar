@@ -770,12 +770,13 @@ fn one_line(s: &str) -> String {
 pub fn write_governor_next_run(
     cfg: &config::Config,
     report: &LoopGovernorReport,
+    task: Option<&str>,
 ) -> Option<std::path::PathBuf> {
     if !cfg.akar_dir.exists() {
         return None;
     }
     let path = cfg.akar_dir.join("NEXT_RUN.md");
-    let content = compile_next_run_prompt(cfg, report);
+    let content = compile_next_run_prompt(cfg, report, task);
     std::fs::write(&path, content).ok()?;
     Some(path)
 }
@@ -800,10 +801,25 @@ pub fn write_governor_next_run(
 /// 11. `## Final Response Format`
 ///
 /// Advisory only — AKAR does not run the compiled prompt.
-pub fn compile_next_run_prompt(cfg: &config::Config, report: &LoopGovernorReport) -> String {
+pub fn compile_next_run_prompt(
+    cfg: &config::Config,
+    report: &LoopGovernorReport,
+    task: Option<&str>,
+) -> String {
     let ts = event_log::now_iso8601();
     let version = crate_version();
     let mut out = String::new();
+
+    // Redact the task (it may echo a prompt containing secrets) and collapse to
+    // one line. Empty/whitespace tasks are treated as no task.
+    let task_clean: Option<String> = task.and_then(|t| {
+        let trimmed = t.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(one_line(&config::redact(trimmed)))
+        }
+    });
 
     out.push_str("# AKAR Next Run\n\n");
 
@@ -815,6 +831,9 @@ pub fn compile_next_run_prompt(cfg: &config::Config, report: &LoopGovernorReport
     out.push_str(&format!("- governor decision: {}\n", report.decision.as_str()));
     out.push_str(&format!("- reason: {}\n", one_line(&report.reason)));
     out.push_str(&format!("- next action: {}\n", one_line(&report.next_action)));
+    if let Some(t) = &task_clean {
+        out.push_str(&format!("- requested task: {}\n", t));
+    }
     out.push('\n');
 
     // 3. Governor Decision
@@ -839,9 +858,28 @@ pub fn compile_next_run_prompt(cfg: &config::Config, report: &LoopGovernorReport
     }
 
     // 5. Objective
+    // The base objective string is always emitted verbatim first so the
+    // validator's `content.contains(objective_for_decision(...))` check passes.
+    // When a task is supplied, it is threaded in as advisory context — for
+    // non-stop decisions the task follows the objective; for stop-class
+    // decisions the blocker remains primary and the task is listed as
+    // secondary ("after the blocker is resolved"). The task never overrides
+    // governor safety.
     out.push_str("## Objective\n");
     out.push_str(objective_for_decision(&report.decision));
-    out.push_str("\n\n");
+    out.push('\n');
+    if let Some(t) = &task_clean {
+        match report.decision.decision_class() {
+            DecisionClass::Continue | DecisionClass::ActionRequired => {
+                out.push_str(&format!("- Task: {}\n", t));
+            }
+            DecisionClass::Stop => {
+                out.push_str("- Primary objective: resolve the governor blocker above before attempting any task.\n");
+                out.push_str(&format!("- Requested task after the blocker is resolved: {}\n", t));
+            }
+        }
+    }
+    out.push('\n');
 
     // 6. Hard Rules
     out.push_str("## Hard Rules\n");
@@ -1489,6 +1527,16 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
+
+    // v0.26: compile_next_run_prompt / write_governor_next_run now take an
+    // optional task. Existing tests pass `None` (no task) via these wrappers
+    // to preserve the pre-v0.26 behavior without editing every call site.
+    fn compile(cfg: &config::Config, report: &LoopGovernorReport) -> String {
+        compile_next_run_prompt(cfg, report, None)
+    }
+    fn write_nr(cfg: &config::Config, report: &LoopGovernorReport) -> Option<PathBuf> {
+        write_governor_next_run(cfg, report, None)
+    }
 
     /// Build a config whose `akar_dir` points at a temp dir. `project_root`
     /// is the real cwd so git status reflects the real repo.
@@ -2292,7 +2340,7 @@ mod tests {
         let dir = fresh_akar_dir("gov_request_writes");
         let cfg = cfg_with_akar_dir(dir.clone());
         let report = decide(&cfg);
-        let path = write_governor_next_run(&cfg, &report);
+        let path = write_nr(&cfg, &report);
         assert!(path.is_some(), "request path must write NEXT_RUN.md");
         let next_run = dir.join("NEXT_RUN.md");
         assert!(next_run.exists());
@@ -2693,7 +2741,7 @@ mod tests {
     #[test]
     fn next_run_includes_all_required_sections_in_exact_order() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         let sections = section_headers(&prompt);
         let expected = [
             "## Current State",
@@ -2716,14 +2764,14 @@ mod tests {
     #[test]
     fn next_run_includes_akar_version() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         assert!(prompt.contains(&format!("- AKAR version: {}", env!("CARGO_PKG_VERSION"))));
     }
 
     #[test]
     fn next_run_includes_governor_decision() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::SnapshotNow));
+        let prompt = compile(&cfg, &report_for(LoopDecision::SnapshotNow));
         assert!(prompt.contains("- governor decision: SNAPSHOT_NOW"));
         assert!(prompt.contains("- decision: SNAPSHOT_NOW"));
         assert!(prompt.contains("- class: continue-class"));
@@ -2732,7 +2780,7 @@ mod tests {
     #[test]
     fn next_run_includes_evidence_used() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         assert!(prompt.contains("- git repository status: available"));
         assert!(prompt.contains("- working tree clean: yes"));
     }
@@ -2740,14 +2788,14 @@ mod tests {
     #[test]
     fn next_run_empty_evidence_writes_placeholder() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &empty_evidence_report(LoopDecision::Ready));
+        let prompt = compile(&cfg, &empty_evidence_report(LoopDecision::Ready));
         assert!(prompt.contains("No evidence files were used."));
     }
 
     #[test]
     fn next_run_includes_hard_rules() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         assert!(prompt.contains("## Hard Rules"));
         assert!(prompt.contains("- Do not run git reset."));
         assert!(prompt.contains("- Do not run git clean."));
@@ -2764,7 +2812,7 @@ mod tests {
     #[test]
     fn next_run_includes_allowed_commands() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         assert!(prompt.contains("## Allowed Commands"));
         assert!(prompt.contains("`git status`"));
         assert!(prompt.contains("`cargo build --release`"));
@@ -2775,7 +2823,7 @@ mod tests {
     #[test]
     fn next_run_includes_forbidden_commands() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         assert!(prompt.contains("## Forbidden Commands"));
         assert!(prompt.contains("`git reset`"));
         assert!(prompt.contains("`rm -rf /`"));
@@ -2787,7 +2835,7 @@ mod tests {
     #[test]
     fn next_run_includes_stop_conditions() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         assert!(prompt.contains("## Stop Conditions"));
         assert!(prompt.contains("Stop if `akar hooks --check` fails."));
         assert!(prompt.contains("Stop if `cargo test` fails."));
@@ -2798,7 +2846,7 @@ mod tests {
     #[test]
     fn next_run_includes_verification_commands() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         assert!(prompt.contains("## Verification Required"));
         assert!(prompt.contains("`cargo build --release`"));
         assert!(prompt.contains("`cargo test`"));
@@ -2809,7 +2857,7 @@ mod tests {
     #[test]
     fn next_run_includes_final_response_format() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         assert!(prompt.contains("## Final Response Format"));
         assert!(prompt.contains("1. Baseline confirmation"));
         assert!(prompt.contains("10. Next recommended release"));
@@ -2820,14 +2868,14 @@ mod tests {
     #[test]
     fn ready_objective_compiled_correctly() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         assert!(prompt.contains("Continue the scoped task without broadening the work."));
     }
 
     #[test]
     fn snapshot_now_objective_compiled_correctly() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::SnapshotNow));
+        let prompt = compile(&cfg, &report_for(LoopDecision::SnapshotNow));
         assert!(prompt.contains("Create a clean baseline snapshot before making changes."));
         // Decision-specific allowed command addition.
         assert!(prompt.contains("`cargo run -- preflight --snapshot \"<task>\"`"));
@@ -2836,7 +2884,7 @@ mod tests {
     #[test]
     fn run_postmortem_objective_compiled_correctly() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::RunPostmortem));
+        let prompt = compile(&cfg, &report_for(LoopDecision::RunPostmortem));
         assert!(prompt.contains("Run baseline postmortem before making more changes."));
         assert!(prompt.contains("`cargo run -- postmortem --diff --baseline`"));
         assert!(prompt.contains("Stop if postmortem returns UNKNOWN."));
@@ -2845,7 +2893,7 @@ mod tests {
     #[test]
     fn commit_checkpoint_objective_compiled_correctly() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::CommitCheckpoint));
+        let prompt = compile(&cfg, &report_for(LoopDecision::CommitCheckpoint));
         assert!(prompt.contains("Verify and commit completed AKAR work with explicit files only before starting a new baseline."));
         assert!(prompt.contains("`git add <explicit files>`"));
         assert!(prompt.contains("`git commit -m \"<message>\"`"));
@@ -2855,7 +2903,7 @@ mod tests {
     #[test]
     fn split_task_objective_compiled_correctly() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::SplitTask));
+        let prompt = compile(&cfg, &report_for(LoopDecision::SplitTask));
         assert!(prompt.contains("Stop the broad task and create one smaller single-purpose prompt."));
         assert!(prompt.contains("(no git mutation; write a smaller prompt only)"));
     }
@@ -2863,7 +2911,7 @@ mod tests {
     #[test]
     fn stop_hook_broken_objective_compiled_correctly() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::StopHookBroken));
+        let prompt = compile(&cfg, &report_for(LoopDecision::StopHookBroken));
         assert!(prompt.contains("Stop Bash tool work until AKAR is visible in the Claude Code hook subprocess PATH."));
         assert!(prompt.contains("`where.exe akar`"));
         assert!(prompt.contains("`pwsh -NoProfile -Command \"Get-Command akar\"`"));
@@ -2872,7 +2920,7 @@ mod tests {
     #[test]
     fn stop_repeated_block_objective_compiled_correctly() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::StopRepeatedBlock));
+        let prompt = compile(&cfg, &report_for(LoopDecision::StopRepeatedBlock));
         assert!(prompt.contains("Do not retry the blocked command. Replace it with a safe alternative."));
         assert!(prompt.contains("inspect `.akar/HOOK_EVENTS.jsonl`"));
     }
@@ -2880,7 +2928,7 @@ mod tests {
     #[test]
     fn unknown_objective_compiled_correctly() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Unknown));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Unknown));
         assert!(prompt.contains("Inspect AKAR and git state manually before continuing."));
         assert!(prompt.contains("Stop after reporting unknown state."));
     }
@@ -2892,7 +2940,7 @@ mod tests {
         assert_eq!(LoopDecision::Ready.decision_class(), DecisionClass::Continue);
         assert_eq!(LoopDecision::SnapshotNow.decision_class(), DecisionClass::Continue);
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         assert!(prompt.contains("- class: continue-class"));
     }
 
@@ -2902,7 +2950,7 @@ mod tests {
         assert_eq!(LoopDecision::CommitCheckpoint.decision_class(), DecisionClass::ActionRequired);
         assert_eq!(LoopDecision::SplitTask.decision_class(), DecisionClass::ActionRequired);
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::SplitTask));
+        let prompt = compile(&cfg, &report_for(LoopDecision::SplitTask));
         assert!(prompt.contains("- class: action-required"));
     }
 
@@ -2912,7 +2960,7 @@ mod tests {
         assert_eq!(LoopDecision::StopRepeatedBlock.decision_class(), DecisionClass::Stop);
         assert_eq!(LoopDecision::Unknown.decision_class(), DecisionClass::Stop);
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Unknown));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Unknown));
         assert!(prompt.contains("- class: stop-class"));
     }
 
@@ -2923,7 +2971,7 @@ mod tests {
         let dir = fresh_akar_dir("compiler_request_write");
         let cfg = cfg_with_akar_dir(dir.clone());
         let report = report_for(LoopDecision::Ready);
-        let path = write_governor_next_run(&cfg, &report);
+        let path = write_nr(&cfg, &report);
         assert!(path.is_some());
         let content = fs::read_to_string(dir.join("NEXT_RUN.md")).unwrap();
         assert!(content.starts_with("# AKAR Next Run\n"));
@@ -2966,10 +3014,10 @@ mod tests {
             LoopDecision::StopRepeatedBlock,
             LoopDecision::Unknown,
         ];
-        let first = section_headers(&compile_next_run_prompt(&cfg, &report_for(decisions[0].clone())));
+        let first = section_headers(&compile(&cfg, &report_for(decisions[0].clone())));
         assert_eq!(first.len(), 10);
         for d in decisions.iter().skip(1) {
-            let p = compile_next_run_prompt(&cfg, &report_for(d.clone()));
+            let p = compile(&cfg, &report_for(d.clone()));
             assert_eq!(section_headers(&p), first, "section order differs for {:?}", d);
         }
     }
@@ -2979,7 +3027,7 @@ mod tests {
     #[test]
     fn valid_compiled_next_run_passes() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         let result = validate_next_run(&prompt);
         assert!(result.pass, "valid compiled prompt should PASS: {:?}", result.reasons);
         assert!(result.reasons.is_empty());
@@ -2997,7 +3045,7 @@ mod tests {
     #[test]
     fn missing_required_section_fails() {
         let cfg = compiler_cfg();
-        let mut prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let mut prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         // Remove the Objective section header and its body up to the next header.
         prompt = prompt.replace("## Objective\n", "## (removed)\n");
         let result = validate_next_run(&prompt);
@@ -3012,7 +3060,7 @@ mod tests {
     #[test]
     fn wrong_section_order_fails() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         // Swap two section headers so order is wrong.
         let swapped = prompt
             .replace("## Hard Rules", "## TEMP_HARD")
@@ -3025,7 +3073,7 @@ mod tests {
     #[test]
     fn empty_hard_rules_fails() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         // Blank the Hard Rules body by removing all its rule lines.
         let mut lines: Vec<&str> = prompt.lines().collect();
         let mut out = String::new();
@@ -3055,7 +3103,7 @@ mod tests {
     #[test]
     fn empty_allowed_commands_fails() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         let mut out = String::new();
         let mut in_sec = false;
         for line in prompt.lines() {
@@ -3082,7 +3130,7 @@ mod tests {
     #[test]
     fn empty_forbidden_commands_fails() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         let mut out = String::new();
         let mut in_sec = false;
         for line in prompt.lines() {
@@ -3109,7 +3157,7 @@ mod tests {
     #[test]
     fn empty_stop_conditions_fails() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         let mut out = String::new();
         let mut in_sec = false;
         for line in prompt.lines() {
@@ -3136,7 +3184,7 @@ mod tests {
     #[test]
     fn empty_verification_required_fails() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         let mut out = String::new();
         let mut in_sec = false;
         for line in prompt.lines() {
@@ -3163,7 +3211,7 @@ mod tests {
     #[test]
     fn missing_final_response_format_fails() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         let broken = prompt.replace("## Final Response Format", "## (removed)");
         let result = validate_next_run(&broken);
         assert!(!result.pass);
@@ -3173,7 +3221,7 @@ mod tests {
     #[test]
     fn missing_forbidden_command_safety_item_fails() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         // Remove one forbidden item line.
         let broken = prompt.replace("- `rm -rf /*`\n", "");
         let result = validate_next_run(&broken);
@@ -3184,7 +3232,7 @@ mod tests {
     #[test]
     fn missing_hard_rule_do_not_retry_fails() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         let broken = prompt.replace("- Do not retry blocked commands.\n", "");
         let result = validate_next_run(&broken);
         assert!(!result.pass);
@@ -3194,7 +3242,7 @@ mod tests {
     #[test]
     fn missing_hard_rule_stop_if_verification_fails_fails() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         let broken = prompt.replace("- Stop if verification fails.\n", "");
         let result = validate_next_run(&broken);
         assert!(!result.pass);
@@ -3204,7 +3252,7 @@ mod tests {
     #[test]
     fn decision_class_mismatch_fails() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         // Tamper the class line: READY should be continue-class, change it to stop-class.
         let broken = prompt.replace("- class: continue-class", "- class: stop-class");
         let result = validate_next_run(&broken);
@@ -3215,7 +3263,7 @@ mod tests {
     #[test]
     fn decision_specific_objective_mismatch_fails() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         // Replace the READY objective with the SNAPSHOT_NOW objective.
         let broken = prompt.replace(
             "Continue the scoped task without broadening the work.",
@@ -3240,7 +3288,7 @@ mod tests {
             LoopDecision::Unknown,
         ];
         for d in decisions.iter() {
-            let prompt = compile_next_run_prompt(&cfg, &report_for(d.clone()));
+            let prompt = compile(&cfg, &report_for(d.clone()));
             let result = validate_next_run(&prompt);
             assert!(
                 result.pass,
@@ -3254,7 +3302,7 @@ mod tests {
     #[test]
     fn pass_output_format_is_correct() {
         let cfg = compiler_cfg();
-        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         let result = validate_next_run(&prompt);
         let out = format_next_run_check(&result);
         assert!(out.starts_with("NEXT_RUN check: PASS\n"));
@@ -3294,7 +3342,7 @@ mod tests {
         let dir = fresh_akar_dir("check_request_writes");
         let cfg = cfg_with_akar_dir(dir.clone());
         let report = report_for(LoopDecision::Ready);
-        let path = write_governor_next_run(&cfg, &report);
+        let path = write_nr(&cfg, &report);
         assert!(path.is_some());
         assert!(dir.join("NEXT_RUN.md").exists());
         fs::remove_dir_all(&dir).ok();
@@ -3309,6 +3357,171 @@ mod tests {
         let _ = format_governor_one_line(&report);
         let _ = format_governor_json(&report);
         assert!(!dir.join("NEXT_RUN.md").exists());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    // ---- v0.26.0: task threading into NEXT_RUN ---------------------------
+
+    #[test]
+    fn task_is_threaded_into_current_state() {
+        let cfg = cfg_with_akar_dir(fresh_akar_dir("task_current_state"));
+        let report = report_for(LoopDecision::Ready);
+        let prompt = compile_next_run_prompt(&cfg, &report, Some("fix one small failing test"));
+        assert!(
+            prompt.contains("- requested task: fix one small failing test"),
+            "task must appear in Current State: {}",
+            prompt
+        );
+    }
+
+    #[test]
+    fn task_is_threaded_into_objective_for_ready() {
+        let cfg = cfg_with_akar_dir(fresh_akar_dir("task_ready"));
+        let report = report_for(LoopDecision::Ready);
+        let prompt = compile_next_run_prompt(&cfg, &report, Some("fix one small failing test"));
+        assert!(prompt.contains(objective_for_decision(&LoopDecision::Ready)));
+        assert!(prompt.contains("- Task: fix one small failing test"));
+    }
+
+    #[test]
+    fn task_is_threaded_into_objective_for_snapshot_now() {
+        let cfg = cfg_with_akar_dir(fresh_akar_dir("task_snapshot"));
+        let report = report_for(LoopDecision::SnapshotNow);
+        let prompt = compile_next_run_prompt(&cfg, &report, Some("fix the bug"));
+        assert!(prompt.contains(objective_for_decision(&LoopDecision::SnapshotNow)));
+        assert!(prompt.contains("- Task: fix the bug"));
+    }
+
+    #[test]
+    fn task_is_threaded_into_objective_for_run_postmortem() {
+        let cfg = cfg_with_akar_dir(fresh_akar_dir("task_postmortem"));
+        let report = report_for(LoopDecision::RunPostmortem);
+        let prompt = compile_next_run_prompt(&cfg, &report, Some("fix the bug"));
+        assert!(prompt.contains(objective_for_decision(&LoopDecision::RunPostmortem)));
+        assert!(prompt.contains("- Task: fix the bug"));
+    }
+
+    #[test]
+    fn task_is_threaded_into_objective_for_commit_checkpoint() {
+        let cfg = cfg_with_akar_dir(fresh_akar_dir("task_commit"));
+        let report = report_for(LoopDecision::CommitCheckpoint);
+        let prompt = compile_next_run_prompt(&cfg, &report, Some("fix the bug"));
+        assert!(prompt.contains(objective_for_decision(&LoopDecision::CommitCheckpoint)));
+        assert!(prompt.contains("- Task: fix the bug"));
+    }
+
+    #[test]
+    fn task_is_threaded_into_objective_for_split_task() {
+        let cfg = cfg_with_akar_dir(fresh_akar_dir("task_split"));
+        let report = report_for(LoopDecision::SplitTask);
+        let prompt = compile_next_run_prompt(&cfg, &report, Some("fix the bug"));
+        assert!(prompt.contains(objective_for_decision(&LoopDecision::SplitTask)));
+        assert!(prompt.contains("- Task: fix the bug"));
+    }
+
+    #[test]
+    fn stop_hook_broken_keeps_blocker_primary_and_task_secondary() {
+        let cfg = cfg_with_akar_dir(fresh_akar_dir("task_stop_hook"));
+        let report = report_for(LoopDecision::StopHookBroken);
+        let prompt = compile_next_run_prompt(&cfg, &report, Some("fix the bug"));
+        // Base objective (the blocker) must remain verbatim.
+        assert!(prompt.contains(objective_for_decision(&LoopDecision::StopHookBroken)));
+        // Stop-class: primary-objective line + task as secondary.
+        assert!(prompt.contains("- Primary objective: resolve the governor blocker"));
+        assert!(prompt.contains("- Requested task after the blocker is resolved: fix the bug"));
+        // The task must NOT appear as a plain "- Task:" (which would imply it is primary).
+        assert!(!prompt.contains("- Task: fix the bug"));
+    }
+
+    #[test]
+    fn stop_repeated_block_keeps_blocker_primary_and_task_secondary() {
+        let cfg = cfg_with_akar_dir(fresh_akar_dir("task_stop_rep"));
+        let report = report_for(LoopDecision::StopRepeatedBlock);
+        let prompt = compile_next_run_prompt(&cfg, &report, Some("fix the bug"));
+        assert!(prompt.contains(objective_for_decision(&LoopDecision::StopRepeatedBlock)));
+        assert!(prompt.contains("- Primary objective: resolve the governor blocker"));
+        assert!(prompt.contains("- Requested task after the blocker is resolved: fix the bug"));
+        assert!(!prompt.contains("- Task: fix the bug"));
+    }
+
+    #[test]
+    fn unknown_keeps_inspection_primary_and_task_secondary() {
+        let cfg = cfg_with_akar_dir(fresh_akar_dir("task_unknown"));
+        let report = report_for(LoopDecision::Unknown);
+        let prompt = compile_next_run_prompt(&cfg, &report, Some("fix the bug"));
+        assert!(prompt.contains(objective_for_decision(&LoopDecision::Unknown)));
+        assert!(prompt.contains("- Primary objective: resolve the governor blocker"));
+        assert!(prompt.contains("- Requested task after the blocker is resolved: fix the bug"));
+        assert!(!prompt.contains("- Task: fix the bug"));
+    }
+
+    #[test]
+    fn no_task_preserves_current_behavior() {
+        let cfg = cfg_with_akar_dir(fresh_akar_dir("task_none"));
+        let report = report_for(LoopDecision::Ready);
+        let prompt = compile_next_run_prompt(&cfg, &report, None);
+        assert!(!prompt.contains("requested task"));
+        assert!(!prompt.contains("- Task:"));
+        assert!(!prompt.contains("Primary objective"));
+        // Objective section still has the base objective.
+        assert!(prompt.contains(objective_for_decision(&LoopDecision::Ready)));
+    }
+
+    #[test]
+    fn empty_task_is_treated_as_no_task() {
+        let cfg = cfg_with_akar_dir(fresh_akar_dir("task_empty"));
+        let report = report_for(LoopDecision::Ready);
+        let prompt = compile_next_run_prompt(&cfg, &report, Some("   "));
+        assert!(!prompt.contains("requested task"));
+        assert!(!prompt.contains("- Task:"));
+    }
+
+    #[test]
+    fn task_is_redacted_in_next_run() {
+        let cfg = cfg_with_akar_dir(fresh_akar_dir("task_redact"));
+        let report = report_for(LoopDecision::Ready);
+        let prompt = compile_next_run_prompt(&cfg, &report, Some("fix token=sk-abc123secret bug"));
+        assert!(!prompt.contains("sk-abc123"), "task secrets must be redacted");
+        assert!(prompt.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn request_check_passes_task_threaded_next_run() {
+        let cfg = cfg_with_akar_dir(fresh_akar_dir("task_validate"));
+        let report = report_for(LoopDecision::Ready);
+        let content = compile_next_run_prompt(&cfg, &report, Some("fix one small failing test"));
+        let result = validate_next_run(&content);
+        assert!(
+            result.pass,
+            "task-threaded NEXT_RUN must pass the validator: {:?}",
+            result.reasons
+        );
+    }
+
+    #[test]
+    fn governor_command_path_still_does_not_write_next_run_with_task() {
+        // `akar governor` never calls write_governor_next_run, so threading a
+        // task into `request` must not change that.
+        let dir = fresh_akar_dir("gov_no_write_task");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        let _ = format_governor_report(&report);
+        let _ = format_governor_one_line(&report);
+        let _ = format_governor_json(&report);
+        assert!(!dir.join("NEXT_RUN.md").exists(), "governor must not write NEXT_RUN.md");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn write_governor_next_run_with_task_writes_task_to_file() {
+        let dir = fresh_akar_dir("write_task");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = report_for(LoopDecision::Ready);
+        let path = write_governor_next_run(&cfg, &report, Some("fix one small failing test"));
+        assert!(path.is_some());
+        let content = fs::read_to_string(dir.join("NEXT_RUN.md")).unwrap();
+        assert!(content.contains("- requested task: fix one small failing test"));
+        assert!(content.contains("- Task: fix one small failing test"));
         fs::remove_dir_all(&dir).ok();
     }
 }

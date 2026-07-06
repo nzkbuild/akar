@@ -817,7 +817,7 @@ mod tests {
         // Build a real compiled NEXT_RUN.md via the governor writer.
         let gov_cfg = cfg.clone();
         let report = crate::loop_governor::decide(&gov_cfg);
-        let path = crate::loop_governor::write_governor_next_run(&gov_cfg, &report);
+        let path = crate::loop_governor::write_governor_next_run(&gov_cfg, &report, None);
         assert!(path.is_some(), "setup: governor writer should produce NEXT_RUN.md");
         let doc_report = run_doctor_report(&cfg);
         let nr = doc_report
