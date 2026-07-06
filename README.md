@@ -300,6 +300,10 @@ akar hooks --check      # validates (source-tree, project .akar/hooks/, or embed
 
 If `.akar/` is left untracked and its contents are the only thing making the tree dirty, `akar preflight --snapshot "<task>"` will refuse the dirty tree (it still requires a clean baseline either way) and print an advisory explaining that AKAR's own local state is the cause, so you know to gitignore or commit it intentionally before retrying.
 
+### Hook event log root (v0.29.0+)
+
+The PreToolUse hook writes safety events to the **target project's** `.akar/HOOK_EVENTS.jsonl`, not the Claude Code session's working directory. It reads the `"cwd"` field from the hook's stdin JSON (the directory Claude Code is operating in) and uses that as the log root, falling back to the hook process's own cwd if the field is absent. Each event line includes a `log_root` field so the target project is explicit even when inspected from another context.
+
 ---
 
 ## Development approach

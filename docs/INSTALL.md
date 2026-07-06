@@ -179,6 +179,8 @@ To use AKAR in advisory mode on a repo that is not AKAR itself:
 
 If you skip the `git status` check and `.akar/` is left untracked, `akar preflight --snapshot` will refuse the resulting dirty tree and print an advisory naming `.akar/` as the cause — it will not auto-ignore or auto-commit anything on your behalf.
 
+Hook events are now written to the **target project's** `.akar/HOOK_EVENTS.jsonl` (the hook reads `"cwd"` from the Claude Code stdin JSON, falling back to the process cwd), so they stay where you'd expect them even when the Claude Code session's working directory differs from the repo being dogfooded.
+
 ### Recommended dogfood command
 
 Once bootstrapped, the recommended shape for starting a session is to pass the actual task straight to `akar request` so the compiled `.akar/NEXT_RUN.md` prompt is self-describing instead of generic:

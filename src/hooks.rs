@@ -520,15 +520,22 @@ pub struct HookEvent {
     pub tool_name: String,
     /// Empty string when not present or not a Bash call.
     pub command: String,
+    /// The project root cwd from the hook JSON, or empty if absent.
+    /// v0.29.0: Claude Code provides this as a top-level "cwd" field.
+    pub cwd: String,
 }
 
 /// Parse the relevant fields from a Claude Code PreToolUse JSON stdin payload.
 /// Uses only std — no external JSON parser.
+///
+/// v0.29.0: also extracts the top-level "cwd" field (the working directory
+/// when the hook fired). This is used as the hook event log root.
 #[allow(dead_code)]
 pub fn parse_hook_event(json: &str) -> HookEvent {
     let tool_name = extract_json_str_value(json, "tool_name").unwrap_or_default();
     let command = extract_json_str_value(json, "command").unwrap_or_default();
-    HookEvent { tool_name, command }
+    let cwd = extract_json_str_value(json, "cwd").unwrap_or_default();
+    HookEvent { tool_name, command, cwd }
 }
 
 /// Decide what to do with a parsed hook event.
@@ -607,6 +614,9 @@ mod tests {
         assert!(EMBEDDED_HOOK_SH.contains("akar safety"));
         assert!(EMBEDDED_HOOK_SH.contains("HOOK_EVENTS.jsonl"));
         assert!(EMBEDDED_HOOK_SH.contains("exit 2"));
+        // v0.29.0: template must extract cwd from JSON for log root targeting
+        assert!(EMBEDDED_HOOK_SH.contains("\"cwd\""), "bash template must read cwd from JSON");
+        assert!(EMBEDDED_HOOK_SH.contains("log_root"), "bash template must include log_root in events");
     }
 
     #[test]
@@ -615,6 +625,9 @@ mod tests {
         assert!(EMBEDDED_HOOK_PS1.contains("akar safety"));
         assert!(EMBEDDED_HOOK_PS1.contains("HOOK_EVENTS.jsonl"));
         assert!(EMBEDDED_HOOK_PS1.contains("exit 2"));
+        // v0.29.0: template must extract cwd from JSON for log root targeting
+        assert!(EMBEDDED_HOOK_PS1.contains("\"cwd\""), "ps1 template must read cwd from JSON");
+        assert!(EMBEDDED_HOOK_PS1.contains("log_root"), "ps1 template must include log_root in events");
     }
 
     #[test]
@@ -877,6 +890,9 @@ mod tests {
     const BASH_RM_RF: &str = r#"{"session_id":"test","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rm -rf /"}}"#;
     const NON_BASH_READ: &str = r#"{"session_id":"test","hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{"file_path":"/foo"}}"#;
     const BASH_NO_COMMAND: &str = r#"{"session_id":"test","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{}}"#;
+    const BASH_CARGO_TEST_WITH_CWD: &str = r#"{"session_id":"test","cwd":"/home/user/my-project","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cargo test"}}"#;
+    const BASH_RM_RF_WITH_CWD: &str = r#"{"session_id":"test","cwd":"/tmp/target-repo","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rm -rf /"}}"#;
+    const BASH_NO_CWD: &str = r#"{"session_id":"test","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"npm test"}}"#;
 
     #[test]
     fn parse_hook_event_bash_cargo_test() {
@@ -904,6 +920,63 @@ mod tests {
         let e = parse_hook_event(BASH_NO_COMMAND);
         assert_eq!(e.tool_name, "Bash");
         assert_eq!(e.command, "");
+    }
+
+    // -- v0.29.0: cwd extraction from hook JSON --------------------------------
+
+    #[test]
+    fn parse_hook_event_extracts_cwd_when_present() {
+        let e = parse_hook_event(BASH_CARGO_TEST_WITH_CWD);
+        assert_eq!(e.tool_name, "Bash");
+        assert_eq!(e.command, "cargo test");
+        assert_eq!(e.cwd, "/home/user/my-project");
+    }
+
+    #[test]
+    fn parse_hook_event_cwd_empty_when_absent() {
+        let e = parse_hook_event(BASH_NO_CWD);
+        assert_eq!(e.tool_name, "Bash");
+        assert_eq!(e.command, "npm test");
+        assert_eq!(e.cwd, "");
+    }
+
+    #[test]
+    fn parse_hook_event_cwd_does_not_affect_safety_rm_rf() {
+        let e = parse_hook_event(BASH_RM_RF_WITH_CWD);
+        assert_eq!(e.tool_name, "Bash");
+        assert_eq!(e.command, "rm -rf /");
+        assert_eq!(e.cwd, "/tmp/target-repo");
+        // Safety classification must still work — rm -rf / is still BLOCKED
+        if let HookDecision::Check(cmd) = hook_decision(&e) {
+            let a = crate::safety::classify_command(&cmd);
+            assert!(a.blocked, "rm -rf / must still be BLOCKED with cwd present");
+        } else {
+            panic!("expected Check decision");
+        }
+    }
+
+    #[test]
+    fn parse_hook_event_cwd_does_not_affect_safety_cargo_test() {
+        let e = parse_hook_event(BASH_CARGO_TEST_WITH_CWD);
+        assert_eq!(e.tool_name, "Bash");
+        assert_eq!(e.command, "cargo test");
+        assert_eq!(e.cwd, "/home/user/my-project");
+        if let HookDecision::Check(cmd) = hook_decision(&e) {
+            let a = crate::safety::classify_command(&cmd);
+            assert!(!a.blocked, "cargo test must still be ALLOWed with cwd present");
+        } else {
+            panic!("expected Check decision");
+        }
+    }
+
+    #[test]
+    fn parse_hook_event_non_bash_skip_unaffected_by_cwd() {
+        // Non-Bash tools still produce Skip regardless of cwd.
+        let json = r#"{"session_id":"test","cwd":"/some/path","hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{"file_path":"/foo"}}"#;
+        let e = parse_hook_event(json);
+        assert_eq!(e.tool_name, "Read");
+        assert_eq!(e.cwd, "/some/path");
+        assert_eq!(hook_decision(&e), HookDecision::Skip);
     }
 
     #[test]

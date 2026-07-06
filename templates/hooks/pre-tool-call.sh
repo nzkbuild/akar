@@ -2,7 +2,8 @@
 # AKAR pre-tool-call hook (bash)
 #
 # Called by Claude Code before each tool execution via PreToolUse hook.
-# Claude Code sends a JSON object via stdin with tool_name and tool_input.
+# Claude Code sends a JSON object via stdin with tool_name, tool_input,
+# and a top-level "cwd" field (the working directory when the hook fired).
 #
 # Exit codes:
 #   0 — allow (safe or non-Bash tool)
@@ -11,6 +12,10 @@
 #
 # Hook events are written to .akar/HOOK_EVENTS.jsonl for local audit.
 # AKAR does not send hook telemetry anywhere.
+#
+# v0.29.0: log root is chosen from the Claude Code "cwd" field (the target
+# project root) when present, falling back to the hook process cwd.  Each
+# event line includes a "log_root" field so the target project is explicit.
 #
 # Install: register in ~/.claude/settings.json under hooks.PreToolUse.
 # AKAR does not install this automatically.
@@ -24,17 +29,31 @@ if [ -z "$JSON" ]; then
     exit 0
 fi
 
-# Ensure .akar/ exists
-AKAR_DIR="$(pwd)/.akar"
+# ---------- v0.29.0: choose log root from Claude Code "cwd" field ----------
+# Priority: explicit cwd from hook JSON > process cwd as fallback.
+LOG_ROOT="$(pwd)"
+CWD_FROM_JSON=""
+if echo "$JSON" | grep -q '"cwd"'; then
+    CWD_FROM_JSON="$(echo "$JSON" | grep -o '"cwd"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"')"
+fi
+if [ -n "$CWD_FROM_JSON" ] && [ -d "$CWD_FROM_JSON" ]; then
+    LOG_ROOT="$CWD_FROM_JSON"
+fi
+# --------------------------------------------------------------------------
+
+# Ensure .akar/ exists under the chosen log root
+AKAR_DIR="$LOG_ROOT/.akar"
 mkdir -p "$AKAR_DIR"
 HOOK_LOG="$AKAR_DIR/HOOK_EVENTS.jsonl"
 TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo 'unknown')"
+# JSON-escape log_root for embedding (a path may contain backslashes on Windows)
+LOG_ROOT_ESC="$(echo "$LOG_ROOT" | sed 's/\\/\\\\/g; s/"/\\"/g')"
 
 write_event() {
     local tool="$1" preview="$2" decision="$3" code="$4"
     # Escape preview for JSON: backslash, quote, newline, tab
     preview="$(echo "$preview" | sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/g' | tr -d '\n' | sed 's/\\n$//')"
-    echo "{\"timestamp\":\"$TIMESTAMP\",\"hook\":\"PreToolUse\",\"tool_name\":\"$tool\",\"command_preview\":\"$preview\",\"decision\":\"$decision\",\"exit_code\":$code}" >> "$HOOK_LOG"
+    echo "{\"timestamp\":\"$TIMESTAMP\",\"hook\":\"PreToolUse\",\"tool_name\":\"$tool\",\"command_preview\":\"$preview\",\"decision\":\"$decision\",\"exit_code\":$code,\"log_root\":\"$LOG_ROOT_ESC\"}" >> "$HOOK_LOG"
 }
 
 # Extract tool_name
