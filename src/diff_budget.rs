@@ -494,6 +494,7 @@ pub fn format_diff_report(report: &DiffReport) -> String {
         BudgetVerdict::Exceeded { reason } => {
             out.push_str(&format!("  status:  EXCEEDED\n  reason:  {}\n", reason));
             out.push_str("  note:    AKAR measures only — it does not enforce, block, or revert changes\n");
+            out.push_str(&format!("  guidance: {}\n", crate::foundation::budget_exceeded_playbook()));
         }
         BudgetVerdict::Unknown { reason } => {
             out.push_str(&format!("  status:  UNKNOWN\n  reason:  {}\n", reason));

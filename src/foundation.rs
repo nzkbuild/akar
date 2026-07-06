@@ -63,6 +63,7 @@ pub fn budget_exceeded_playbook() -> &'static str {
 }
 
 /// Guidance when a preflight snapshot is required but missing.
+#[allow(dead_code)]
 pub fn snapshot_required_playbook() -> &'static str {
     "snapshot required: no baseline snapshot found.\n\
      Run `akar preflight --snapshot \"task description\"` before starting work.\n\
@@ -71,6 +72,7 @@ pub fn snapshot_required_playbook() -> &'static str {
 }
 
 /// Guidance when the same command has been blocked repeatedly.
+#[allow(dead_code)]
 pub fn repeated_block_playbook(command: &str) -> String {
     format!(
         "repeated block: `{}` has been blocked more than once.\n\
