@@ -244,16 +244,43 @@ pub fn hook_has_akar_not_found_error(hook_log: &Path) -> bool {
         .any(|l| is_hook_not_found_error(l))
 }
 
+/// Number of most-recent hook events considered when detecting repeated
+/// blocks. Older events outside this window do NOT trigger
+/// `STOP_REPEATED_BLOCK`, so stale hook history alone cannot force the
+/// governor to stop forever.
+pub const RECENT_HOOK_WINDOW: usize = 50;
+
 /// Return the first `command_preview` whose BLOCK count in the hook log is
 /// 2 or more. Comparisons are exact string equality on the recorded preview.
 /// Returns None if no command was blocked repeatedly.
+///
+/// v0.15.0: only the most recent [`RECENT_HOOK_WINDOW`] events are considered.
+#[allow(dead_code)]
 pub fn repeated_blocked_command(hook_log: &Path) -> Option<String> {
+    repeated_blocked_command_in_window(hook_log, RECENT_HOOK_WINDOW).map(|(cmd, _)| cmd)
+}
+
+/// Return the first `command_preview` blocked 2+ times within the most recent
+/// `window` hook events, together with that recent block count. Returns None
+/// if no command was blocked repeatedly within the window.
+///
+/// Events older than the window are ignored, so a command blocked twice
+/// historically but not within the recent window does not trigger.
+pub fn repeated_blocked_command_in_window(
+    hook_log: &Path,
+    window: usize,
+) -> Option<(String, usize)> {
     let lines = read_jsonl_lines(hook_log);
-    // Preserve insertion order of first occurrence for deterministic output.
+    // Consider only the most recent `window` events. If the log is shorter,
+    // all events are considered.
+    let start = lines.len().saturating_sub(window);
+    let recent = &lines[start..];
+    // Preserve insertion order of first occurrence within the window for
+    // deterministic output.
     let mut order: Vec<String> = Vec::new();
     let mut counts: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
-    for line in &lines {
+    for line in recent {
         let decision = json_str(line, "decision").unwrap_or_default();
         if !decision.eq_ignore_ascii_case("BLOCK") {
             continue;
@@ -268,8 +295,9 @@ pub fn repeated_blocked_command(hook_log: &Path) -> Option<String> {
         *counts.entry(preview).or_insert(0) += 1;
     }
     for cmd in order {
-        if counts.get(&cmd).copied().unwrap_or(0) >= 2 {
-            return Some(cmd);
+        let c = counts.get(&cmd).copied().unwrap_or(0);
+        if c >= 2 {
+            return Some((cmd, c));
         }
     }
     None
@@ -370,17 +398,18 @@ pub fn decide(cfg: &config::Config) -> LoopGovernorReport {
         };
     }
 
-    // --- Rule C: 2+ BLOCK events for the same command_preview. ---
-    if let Some(cmd) = repeated_blocked_command(&hook_log) {
+    // --- Rule C: 2+ BLOCK events for the same command_preview in the recent
+    // window. Older events outside the window do NOT trigger (v0.15.0). ---
+    if let Some((cmd, count)) = repeated_blocked_command_in_window(&hook_log, RECENT_HOOK_WINDOW) {
         evidence.push(format!(
-            "repeated block: `{}` blocked 2+ times",
-            cmd
+            "repeated block: `{}` blocked {} times within recent {} hook events",
+            cmd, count, RECENT_HOOK_WINDOW
         ));
         return LoopGovernorReport {
             decision: LoopDecision::StopRepeatedBlock,
             reason: format!(
-                "command blocked repeatedly in HOOK_EVENTS.jsonl: `{}`",
-                cmd
+                "same command blocked {} times within recent {} hook events: {}",
+                count, RECENT_HOOK_WINDOW, cmd
             ),
             next_action: foundation::repeated_block_playbook(&cmd),
             suggested_prompt: repeated_block_prompt().to_string(),
@@ -689,6 +718,160 @@ mod tests {
         fs::remove_dir_all(&dir).ok();
     }
 
+    // ---- Rule C v0.15.0: recent-window signal hygiene ------------------
+
+    /// An ALLOW event line used to pad the hook log so older BLOCK events
+    /// fall outside the recent 50-event window.
+    fn allow_line(n: usize) -> String {
+        format!(
+            r#"{{"timestamp":"t","hook":"PreToolUse","tool_name":"Bash","command_preview":"echo pad-{}","decision":"ALLOW","exit_code":0}}"#,
+            n
+        )
+    }
+
+    #[test]
+    fn two_same_blocks_within_recent_50_triggers_stop_repeated_block() {
+        let dir = fresh_akar_dir("rb_recent");
+        let block_line = r#"{"timestamp":"t","hook":"PreToolUse","tool_name":"Bash","command_preview":"rm -rf /","decision":"BLOCK","exit_code":2}"#;
+        // 10 padding events, then 2 BLOCKs — all within recent 50.
+        for i in 0..10 {
+            append_hook_line(&dir, &allow_line(i));
+        }
+        append_hook_line(&dir, block_line);
+        append_hook_line(&dir, block_line);
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        assert_eq!(report.decision, LoopDecision::StopRepeatedBlock);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn two_same_blocks_older_than_recent_50_do_not_trigger() {
+        let dir = fresh_akar_dir("rb_old");
+        let block_line = r#"{"timestamp":"t","hook":"PreToolUse","tool_name":"Bash","command_preview":"rm -rf /","decision":"BLOCK","exit_code":2}"#;
+        // Two BLOCKs first, then 50 padding events push them out of the window.
+        append_hook_line(&dir, block_line);
+        append_hook_line(&dir, block_line);
+        for i in 0..50 {
+            append_hook_line(&dir, &allow_line(i));
+        }
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        assert_ne!(
+            report.decision,
+            LoopDecision::StopRepeatedBlock,
+            "old blocks outside the recent window must not trigger"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn two_different_block_commands_do_not_trigger() {
+        let dir = fresh_akar_dir("rb_different");
+        append_hook_line(
+            &dir,
+            r#"{"timestamp":"t","hook":"PreToolUse","tool_name":"Bash","command_preview":"rm -rf /","decision":"BLOCK","exit_code":2}"#,
+        );
+        append_hook_line(
+            &dir,
+            r#"{"timestamp":"t","hook":"PreToolUse","tool_name":"Bash","command_preview":"git push --force","decision":"BLOCK","exit_code":2}"#,
+        );
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        assert_ne!(
+            report.decision,
+            LoopDecision::StopRepeatedBlock,
+            "two different blocked commands must not trigger"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn repeated_block_reason_includes_command_preview() {
+        let dir = fresh_akar_dir("rb_reason_cmd");
+        let cmd = "rm -rf /";
+        let block_line = format!(
+            r#"{{"timestamp":"t","hook":"PreToolUse","tool_name":"Bash","command_preview":"{}","decision":"BLOCK","exit_code":2}}"#,
+            cmd
+        );
+        append_hook_line(&dir, &block_line);
+        append_hook_line(&dir, &block_line);
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        assert_eq!(report.decision, LoopDecision::StopRepeatedBlock);
+        assert!(
+            report.reason.contains(cmd),
+            "reason must include command_preview: {}",
+            report.reason
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn repeated_block_reason_includes_recent_count() {
+        let dir = fresh_akar_dir("rb_reason_count");
+        let block_line = r#"{"timestamp":"t","hook":"PreToolUse","tool_name":"Bash","command_preview":"rm -rf /","decision":"BLOCK","exit_code":2}"#;
+        append_hook_line(&dir, block_line);
+        append_hook_line(&dir, block_line);
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        assert_eq!(report.decision, LoopDecision::StopRepeatedBlock);
+        assert!(
+            report.reason.contains("2 times"),
+            "reason must include recent block count: {}",
+            report.reason
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn repeated_block_reason_includes_window_size() {
+        let dir = fresh_akar_dir("rb_reason_window");
+        let block_line = r#"{"timestamp":"t","hook":"PreToolUse","tool_name":"Bash","command_preview":"rm -rf /","decision":"BLOCK","exit_code":2}"#;
+        append_hook_line(&dir, block_line);
+        append_hook_line(&dir, block_line);
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        assert_eq!(report.decision, LoopDecision::StopRepeatedBlock);
+        assert!(
+            report.reason.contains(&format!("recent {}", RECENT_HOOK_WINDOW)),
+            "reason must include recent window size: {}",
+            report.reason
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn repeated_block_in_window_helper_returns_count() {
+        let dir = fresh_akar_dir("rb_helper");
+        let block_line = r#"{"timestamp":"t","hook":"PreToolUse","tool_name":"Bash","command_preview":"rm -rf /","decision":"BLOCK","exit_code":2}"#;
+        append_hook_line(&dir, block_line);
+        append_hook_line(&dir, block_line);
+        append_hook_line(&dir, block_line);
+        let path = dir.join("HOOK_EVENTS.jsonl");
+        let result = repeated_blocked_command_in_window(&path, RECENT_HOOK_WINDOW);
+        assert_eq!(result, Some(("rm -rf /".to_string(), 3)));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn repeated_block_just_outside_window_does_not_trigger() {
+        // Edge case: 2 BLOCKs sit exactly at positions 51 and 52 (just outside
+        // a 50-event window that starts after them). With 50 padding events
+        // after, the window covers only the padding — BLOCKs are excluded.
+        let dir = fresh_akar_dir("rb_edge");
+        let block_line = r#"{"timestamp":"t","hook":"PreToolUse","tool_name":"Bash","command_preview":"rm -rf /","decision":"BLOCK","exit_code":2}"#;
+        append_hook_line(&dir, block_line);
+        append_hook_line(&dir, block_line);
+        for i in 0..RECENT_HOOK_WINDOW {
+            append_hook_line(&dir, &allow_line(i));
+        }
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        assert_ne!(report.decision, LoopDecision::StopRepeatedBlock);
+        fs::remove_dir_all(&dir).ok();
+    }
+
     // ---- Rule D: learning patch split rule → SPLIT_TASK ----------------
 
     #[test]
@@ -909,6 +1092,29 @@ mod tests {
         assert!(out.contains("commit completed AKAR work with explicit files only"));
         assert!(out.contains("## Evidence Used"));
         assert!(out.contains("- working tree clean: no"));
+    }
+
+    #[test]
+    fn next_run_block_includes_improved_repeated_block_reason() {
+        // Synthesize a STOP_REPEATED_BLOCK report with the v0.15.0 reason
+        // format and confirm NEXT_RUN.md carries the improved reason.
+        let dir = fresh_akar_dir("rb_nextrun");
+        let block_line = r#"{"timestamp":"t","hook":"PreToolUse","tool_name":"Bash","command_preview":"rm -rf /","decision":"BLOCK","exit_code":2}"#;
+        append_hook_line(&dir, block_line);
+        append_hook_line(&dir, block_line);
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        assert_eq!(report.decision, LoopDecision::StopRepeatedBlock);
+        let out = format_next_run_block(&report);
+        assert!(out.contains("- decision: STOP_REPEATED_BLOCK"));
+        assert!(
+            out.contains(&format!("recent {}", RECENT_HOOK_WINDOW)),
+            "NEXT_RUN must include window size: {}",
+            out
+        );
+        assert!(out.contains("2 times"), "NEXT_RUN must include count: {}", out);
+        assert!(out.contains("rm -rf /"), "NEXT_RUN must include command: {}", out);
+        fs::remove_dir_all(&dir).ok();
     }
 
     // ---- governor uses foundation playbook text for dirty git state ----

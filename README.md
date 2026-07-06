@@ -72,6 +72,8 @@ The decision surfaces in `akar status` (under `loop governor:`) and in `akar req
 - AKAR does not execute the action automatically
 - AKAR does not reset, clean, stash, checkout, push, or delete files
 
+Repeated blocked commands are detected from recent hook evidence (the most recent 50 `HOOK_EVENTS.jsonl` events). Old hook history alone does not force `STOP_REPEATED_BLOCK` forever — a command blocked twice long ago but not within the recent window no longer triggers a stop.
+
 ---
 
 ## Learning patch lifecycle
