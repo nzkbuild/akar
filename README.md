@@ -294,6 +294,12 @@ akar hooks --check      # validates (source-tree, project .akar/hooks/, or embed
 
 `akar hooks --install` writes the embedded templates to `.akar/hooks/`. If a file already exists with identical content it is skipped; if it differs, the existing file is backed up before overwrite. AKAR **never** edits `~/.claude/settings.json` — you must register the hook in Claude Code manually (see `akar hooks` for the settings.json example). `akar hooks --check` and `akar doctor` accept templates from the source tree, the project's `.akar/hooks/`, or the embedded fallback, so a fresh external repo no longer FAILs just because source-tree templates are absent.
 
+### `.akar/` and .gitignore in external repos
+
+`.akar/` contains local AKAR runtime state (`NEXT_RUN.md`, `DIFF_BASELINE.json`, `HOOK_EVENTS.jsonl`, `EVENT_LOG.jsonl`, installed hook templates) — it is not source code. After `akar init` on a fresh repo, decide for yourself whether `.akar/` belongs in `.gitignore` or should be committed; AKAR does not auto-ignore or auto-delete it.
+
+If `.akar/` is left untracked and its contents are the only thing making the tree dirty, `akar preflight --snapshot "<task>"` will refuse the dirty tree (it still requires a clean baseline either way) and print an advisory explaining that AKAR's own local state is the cause, so you know to gitignore or commit it intentionally before retrying.
+
 ---
 
 ## Development approach

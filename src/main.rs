@@ -775,6 +775,16 @@ fn cmd_preflight(prompt: &str, used: Option<u64>, limit: Option<u64>, snapshot: 
                 if let Some(advisory) = cargo_lock_dirty_advisory(&cfg.project_root) {
                     eprintln!("  {}", advisory);
                 }
+                // v0.28 dogfood advisory: if the dirty tree is AKAR's own
+                // local state alone (e.g. a freshly-init'd .akar/ that was
+                // never gitignored), say so explicitly. AKAR will NOT
+                // auto-ignore, delete, or commit .akar/ — the user must
+                // decide intentionally. Mutually exclusive with the
+                // Cargo.lock advisory by construction (each requires the
+                // dirty set to be exactly its own narrow case).
+                if let Some(advisory) = akar_state_dirty_advisory(&cfg.project_root) {
+                    eprintln!("  {}", advisory);
+                }
                 process::exit(1);
             }
             Ok(true) => {}
@@ -928,6 +938,54 @@ fn cargo_lock_dirty_advisory(project_root: &std::path::Path) -> Option<String> {
         "Cargo.lock changed or was generated. Review and commit it intentionally \
          before snapshot, or remove it only if it is truly unwanted. \
          AKAR will not decide for you."
+            .to_string(),
+    )
+}
+
+/// v0.28 dogfood advisory (read-only): if the working tree is dirty ONLY
+/// because of AKAR's own local state under `.akar/` (NEXT_RUN.md,
+/// DIFF_BASELINE.json, HOOK_EVENTS.jsonl, EVENT_LOG.jsonl, installed hook
+/// templates, etc.), return a clear advisory telling the user to decide
+/// intentionally whether to gitignore or commit that state. Returns `None`
+/// if any dirty file falls outside `.akar/` (so the generic dirty-tree
+/// message — or the Cargo.lock advisory — stands on its own).
+///
+/// AKAR will NOT auto-ignore, auto-delete, or auto-commit `.akar/`. The
+/// snapshot still refuses a dirty tree regardless.
+fn akar_state_dirty_advisory(project_root: &std::path::Path) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(project_root)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let porcelain = String::from_utf8_lossy(&out.stdout);
+    let dirty_files: Vec<&str> = porcelain
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.trim_start_matches(" ").split_whitespace().last().unwrap_or(""))
+        .filter(|f| !f.is_empty())
+        .collect();
+    if dirty_files.is_empty() {
+        return None;
+    }
+    let all_under_akar = dirty_files
+        .iter()
+        .all(|f| *f == ".akar" || *f == ".akar/" || f.starts_with(".akar/"));
+    if !all_under_akar {
+        return None;
+    }
+    Some(
+        "AKAR local state is making the tree dirty. Review it, then intentionally \
+         add .akar/ to .gitignore or commit the files you want tracked before \
+         taking a snapshot. AKAR will not decide for you.\n  \
+         .akar/ holds local runtime state (NEXT_RUN.md, DIFF_BASELINE.json, \
+         HOOK_EVENTS.jsonl, EVENT_LOG.jsonl, installed hook templates) by default.\n  \
+         Do not use destructive cleanup (git clean, git reset --hard) to force this \
+         away — review the files first.\n  \
+         Rerun 'akar preflight --snapshot \"<task>\"' once the tree is intentionally clean."
             .to_string(),
     )
 }
@@ -1111,6 +1169,155 @@ mod tests {
         Command::new("git").args(["commit", "-q", "-m", "add lock"]).current_dir(&dir).status().unwrap();
         let advisory = cargo_lock_dirty_advisory(&dir);
         assert!(advisory.is_none(), "advisory must NOT fire on a clean tree");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // -- v0.28: AKAR local state dirty-tree advisory --------------------------
+
+    #[test]
+    fn akar_state_advisory_fires_when_only_next_run_is_dirty() {
+        let dir = temp_git_repo("akar_only_next_run");
+        std::fs::create_dir_all(dir.join(".akar")).unwrap();
+        std::fs::write(dir.join(".akar").join("NEXT_RUN.md"), "# AKAR Next Run\n").unwrap();
+        let advisory = akar_state_dirty_advisory(&dir);
+        assert!(
+            advisory.is_some(),
+            "advisory should fire when only .akar/NEXT_RUN.md is dirty"
+        );
+        let msg = advisory.unwrap();
+        assert!(msg.contains(".akar/"), "advisory must mention .akar/: {}", msg);
+        assert!(
+            msg.contains("AKAR will not decide"),
+            "advisory must say AKAR will not decide: {}",
+            msg
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn akar_state_advisory_fires_when_only_hook_template_is_dirty() {
+        let dir = temp_git_repo("akar_only_hook_template");
+        std::fs::create_dir_all(dir.join(".akar").join("hooks")).unwrap();
+        std::fs::write(
+            dir.join(".akar").join("hooks").join("pre-tool-call.ps1"),
+            "# hook\n",
+        )
+        .unwrap();
+        let advisory = akar_state_dirty_advisory(&dir);
+        assert!(
+            advisory.is_some(),
+            "advisory should fire when only .akar/hooks/pre-tool-call.ps1 is dirty"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn akar_state_advisory_fires_when_only_hook_events_is_dirty() {
+        let dir = temp_git_repo("akar_only_hook_events");
+        std::fs::create_dir_all(dir.join(".akar")).unwrap();
+        std::fs::write(dir.join(".akar").join("HOOK_EVENTS.jsonl"), "{}\n").unwrap();
+        let advisory = akar_state_dirty_advisory(&dir);
+        assert!(
+            advisory.is_some(),
+            "advisory should fire when only .akar/HOOK_EVENTS.jsonl is dirty"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn akar_state_advisory_does_not_fire_with_non_akar_file_dirty() {
+        let dir = temp_git_repo("akar_non_akar_dirty");
+        std::fs::write(dir.join("notes.txt"), "scratch\n").unwrap();
+        let advisory = akar_state_dirty_advisory(&dir);
+        assert!(
+            advisory.is_none(),
+            "advisory must NOT fire when a non-.akar file is dirty"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn akar_state_advisory_does_not_fire_with_akar_plus_source_dirty() {
+        let dir = temp_git_repo("akar_plus_source_dirty");
+        std::fs::create_dir_all(dir.join(".akar")).unwrap();
+        std::fs::write(dir.join(".akar").join("NEXT_RUN.md"), "# AKAR Next Run\n").unwrap();
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+        let advisory = akar_state_dirty_advisory(&dir);
+        assert!(
+            advisory.is_none(),
+            "advisory must NOT fire when .akar/ is dirty alongside a source file"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn akar_state_advisory_does_not_fire_on_clean_tree() {
+        let dir = temp_git_repo("akar_clean_tree");
+        let advisory = akar_state_dirty_advisory(&dir);
+        assert!(advisory.is_none(), "advisory must NOT fire on a clean tree");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn akar_state_advisory_does_not_recommend_destructive_commands() {
+        let dir = temp_git_repo("akar_no_destructive_advice");
+        std::fs::create_dir_all(dir.join(".akar")).unwrap();
+        std::fs::write(dir.join(".akar").join("NEXT_RUN.md"), "# AKAR Next Run\n").unwrap();
+        let advisory = akar_state_dirty_advisory(&dir).expect("advisory should fire");
+        assert!(
+            !advisory.contains("git reset")
+                || advisory.contains("Do not use destructive cleanup"),
+            "advisory must not casually recommend git reset: {}",
+            advisory
+        );
+        assert!(
+            !advisory.to_lowercase().contains("run git clean")
+                && !advisory.to_lowercase().contains("run git stash")
+                && !advisory.to_lowercase().contains("run git checkout"),
+            "advisory must not instruct running git clean/stash/checkout: {}",
+            advisory
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn cargolock_and_akar_state_advisories_do_not_both_fire_when_both_dirty() {
+        let dir = temp_git_repo("both_cargolock_and_akar_dirty");
+        use std::process::Command;
+        std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"x\"\nversion = \"0.1.0\"\n").unwrap();
+        Command::new("git").args(["add", "-A"]).current_dir(&dir).status().unwrap();
+        Command::new("git").args(["commit", "-q", "-m", "add cargo toml"]).current_dir(&dir).status().unwrap();
+        std::fs::write(dir.join("Cargo.lock"), "# lock\n").unwrap();
+        std::fs::create_dir_all(dir.join(".akar")).unwrap();
+        std::fs::write(dir.join(".akar").join("NEXT_RUN.md"), "# AKAR Next Run\n").unwrap();
+        // v0.28: no combined special case implemented — each "only" advisory
+        // requires the dirty set to be exactly its own narrow case, so with
+        // both Cargo.lock and .akar/ dirty, neither should fire.
+        assert!(
+            cargo_lock_dirty_advisory(&dir).is_none(),
+            "cargo_lock advisory must NOT fire when .akar/ is also dirty"
+        );
+        assert!(
+            akar_state_dirty_advisory(&dir).is_none(),
+            "akar_state advisory must NOT fire when Cargo.lock is also dirty"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn preflight_still_refuses_dirty_akar_only_tree() {
+        let dir = temp_git_repo("akar_only_refusal_check");
+        std::fs::create_dir_all(dir.join(".akar")).unwrap();
+        std::fs::write(dir.join(".akar").join("NEXT_RUN.md"), "# AKAR Next Run\n").unwrap();
+        // The dirty-tree detector itself (shared with cmd_preflight's
+        // refusal path) must still report dirty regardless of the advisory.
+        let clean = diff_budget::is_working_tree_clean(&dir);
+        assert_eq!(
+            clean,
+            Ok(false),
+            "working tree with only .akar/ dirty must still be reported dirty"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 }
