@@ -65,7 +65,7 @@ It chooses one of eight decisions, in this priority order:
 | `SNAPSHOT_NOW` | no baseline and tree is clean |
 | `COMMIT_CHECKPOINT` | no baseline and tree is dirty |
 
-The decision surfaces in `akar status` (under `loop governor:`) and in `akar request` (which writes `.akar/NEXT_RUN.md` with the decision, reason, next action, suggested next Claude prompt, and evidence used).
+The decision surfaces in `akar status` (under `loop governor:`), in `akar governor`, and in `akar request` (which compiles `.akar/NEXT_RUN.md` into a Claude-ready next-run prompt — see [Next-run prompt](#next-run-prompt) below).
 
 - AKAR uses local evidence plus foundation playbooks to suggest the next safe action
 - AKAR helps Claude avoid repeated failed attempts
@@ -111,6 +111,31 @@ On Windows PowerShell, use `$LASTEXITCODE` instead of `$?`.
 - exit codes are for orchestration only
 - AKAR still does not execute the suggested action
 - the command is advisory-only; it does not write files or mutate git
+
+---
+
+## Next-run prompt
+
+`akar request` writes a Claude-ready next-run prompt to `.akar/NEXT_RUN.md`. The compiled prompt helps Claude continue correctly without rediscovering basics, repeating blocked actions, or wasting tokens.
+
+The prompt includes these sections in order:
+
+1. `# AKAR Next Run`
+2. `## Current State` — AKAR version, governor decision, reason, next action, timestamp
+3. `## Governor Decision` — decision, class (continue / action-required / stop), suggested prompt
+4. `## Evidence Used` — the governor evidence list (or a "no evidence" placeholder)
+5. `## Objective` — a direct objective compiled from the decision
+6. `## Hard Rules` — always-on safety boundaries
+7. `## Allowed Commands` — safe commands, plus decision-specific additions
+8. `## Forbidden Commands` — destructive commands to never run
+9. `## Stop Conditions` — when to stop, plus decision-specific conditions
+10. `## Verification Required` — commands to verify the work, plus decision-specific additions
+11. `## Final Response Format` — the checklist a follow-up response should follow
+
+- `akar request` writes a Claude-ready next-run prompt
+- the prompt includes objective, hard rules, allowed/forbidden commands, stop conditions, and verification
+- AKAR does not run the prompt automatically
+- `.akar/NEXT_RUN.md` remains local and gitignored
 
 ---
 

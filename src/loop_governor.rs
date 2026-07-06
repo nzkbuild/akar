@@ -91,6 +91,72 @@ impl LoopDecision {
             LoopDecision::Unknown => 30,
         }
     }
+
+    /// Coarse classification of the decision for next-run prompt compilation
+    /// (v0.19.0).
+    ///
+    /// - `Continue`     — READY, SNAPSHOT_NOW (proceed with scoped work)
+    /// - `ActionRequired` — RUN_POSTMORTEM, COMMIT_CHECKPOINT, SPLIT_TASK
+    /// - `Stop`         — STOP_HOOK_BROKEN, STOP_REPEATED_BLOCK, UNKNOWN
+    pub fn decision_class(&self) -> DecisionClass {
+        match self {
+            LoopDecision::Ready | LoopDecision::SnapshotNow => DecisionClass::Continue,
+            LoopDecision::RunPostmortem
+            | LoopDecision::CommitCheckpoint
+            | LoopDecision::SplitTask => DecisionClass::ActionRequired,
+            LoopDecision::StopHookBroken
+            | LoopDecision::StopRepeatedBlock
+            | LoopDecision::Unknown => DecisionClass::Stop,
+        }
+    }
+}
+
+/// Coarse classification of a governor decision (v0.19.0).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecisionClass {
+    /// READY, SNAPSHOT_NOW — proceed with scoped work.
+    Continue,
+    /// RUN_POSTMORTEM, COMMIT_CHECKPOINT, SPLIT_TASK — a specific action is required.
+    ActionRequired,
+    /// STOP_HOOK_BROKEN, STOP_REPEATED_BLOCK, UNKNOWN — stop and reassess.
+    Stop,
+}
+
+impl DecisionClass {
+    /// Human-readable label for the next-run prompt.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DecisionClass::Continue => "continue-class",
+            DecisionClass::ActionRequired => "action-required",
+            DecisionClass::Stop => "stop-class",
+        }
+    }
+}
+
+/// Convenience wrapper around [`LoopDecision::decision_class`].
+#[allow(dead_code)]
+pub fn decision_class_for_decision(report: &LoopGovernorReport) -> DecisionClass {
+    report.decision.decision_class()
+}
+
+/// Compile a direct objective string for a decision (v0.19.0).
+pub fn objective_for_decision(decision: &LoopDecision) -> &'static str {
+    match decision {
+        LoopDecision::Ready => "Continue the scoped task without broadening the work.",
+        LoopDecision::SnapshotNow => "Create a clean baseline snapshot before making changes.",
+        LoopDecision::RunPostmortem => "Run baseline postmortem before making more changes.",
+        LoopDecision::CommitCheckpoint => {
+            "Verify and commit completed AKAR work with explicit files only before starting a new baseline."
+        }
+        LoopDecision::SplitTask => "Stop the broad task and create one smaller single-purpose prompt.",
+        LoopDecision::StopHookBroken => {
+            "Stop Bash tool work until AKAR is visible in the Claude Code hook subprocess PATH."
+        }
+        LoopDecision::StopRepeatedBlock => {
+            "Do not retry the blocked command. Replace it with a safe alternative."
+        }
+        LoopDecision::Unknown => "Inspect AKAR and git state manually before continuing.",
+    }
 }
 
 /// Orchestrator exit code for a governor decision (v0.17.0).
@@ -661,6 +727,7 @@ fn indent_continuation(s: &str) -> String {
 ///
 /// Includes decision, reason, next action, suggested next Claude prompt, and
 /// evidence used.
+#[allow(dead_code)]
 pub fn format_next_run_block(report: &LoopGovernorReport) -> String {
     let mut out = String::new();
     out.push_str("## Loop Governor Decision\n");
@@ -689,8 +756,13 @@ fn one_line(s: &str) -> String {
 // NEXT_RUN.md writer (governor-aware)
 // ---------------------------------------------------------------------------
 
-/// Write (or overwrite) `.akar/NEXT_RUN.md` with the loop governor decision,
-/// reason, next action, suggested next Claude prompt, and evidence used.
+/// Write (or overwrite) `.akar/NEXT_RUN.md` with a compiled, Claude-ready
+/// next-run prompt (v0.19.0).
+///
+/// The prompt includes the 11 sections required by v0.19.0 in exact order:
+/// Current State, Governor Decision, Evidence Used, Objective, Hard Rules,
+/// Allowed Commands, Forbidden Commands, Stop Conditions, Verification
+/// Required, Final Response Format.
 ///
 /// Unlike the resume-mode `write_next_run`, this ALWAYS overwrites so the
 /// NEXT_RUN file reflects the freshest governor decision. It does not execute
@@ -703,22 +775,274 @@ pub fn write_governor_next_run(
         return None;
     }
     let path = cfg.akar_dir.join("NEXT_RUN.md");
-    let ts = crate::event_log::now_iso8601();
-    let content = format!(
-        "# NEXT_RUN — Loop Governor State\n\
-        generated: {ts}\n\
-        project: {project}\n\n\
-        {governor_block}\n\
-        ## Notes\n\
-        - AKAR chose this action from local evidence and foundation playbooks.\n\
-        - AKAR did NOT execute the action automatically.\n\
-        - AKAR did not reset, clean, stash, checkout, push, or delete any files.\n",
-        ts = ts,
-        project = cfg.project_name,
-        governor_block = format_next_run_block(report),
-    );
+    let content = compile_next_run_prompt(cfg, report);
     std::fs::write(&path, content).ok()?;
     Some(path)
+}
+
+// ---------------------------------------------------------------------------
+// Next-run prompt compiler (v0.19.0)
+// ---------------------------------------------------------------------------
+
+/// Compile a Claude-ready next-run prompt from the governor report.
+///
+/// Produces 11 sections in this exact order:
+/// 1. `# AKAR Next Run`
+/// 2. `## Current State`
+/// 3. `## Governor Decision`
+/// 4. `## Evidence Used`
+/// 5. `## Objective`
+/// 6. `## Hard Rules`
+/// 7. `## Allowed Commands`
+/// 8. `## Forbidden Commands`
+/// 9. `## Stop Conditions`
+/// 10. `## Verification Required`
+/// 11. `## Final Response Format`
+///
+/// Advisory only — AKAR does not run the compiled prompt.
+pub fn compile_next_run_prompt(cfg: &config::Config, report: &LoopGovernorReport) -> String {
+    let ts = event_log::now_iso8601();
+    let version = crate_version();
+    let mut out = String::new();
+
+    out.push_str("# AKAR Next Run\n\n");
+
+    // 2. Current State
+    out.push_str("## Current State\n");
+    out.push_str(&format!("- AKAR version: {}\n", version));
+    out.push_str(&format!("- project: {}\n", cfg.project_name));
+    out.push_str(&format!("- timestamp: {}\n", ts));
+    out.push_str(&format!("- governor decision: {}\n", report.decision.as_str()));
+    out.push_str(&format!("- reason: {}\n", one_line(&report.reason)));
+    out.push_str(&format!("- next action: {}\n", one_line(&report.next_action)));
+    out.push('\n');
+
+    // 3. Governor Decision
+    out.push_str("## Governor Decision\n");
+    out.push_str(&format!("- decision: {}\n", report.decision.as_str()));
+    out.push_str(&format!(
+        "- class: {}\n",
+        report.decision.decision_class().as_str()
+    ));
+    out.push_str("- suggested prompt:\n");
+    out.push_str(&format!("```\n{}\n```\n\n", report.suggested_prompt));
+
+    // 4. Evidence Used
+    out.push_str("## Evidence Used\n");
+    if report.evidence_used.is_empty() {
+        out.push_str("No evidence files were used.\n\n");
+    } else {
+        for e in &report.evidence_used {
+            out.push_str(&format!("- {}\n", e));
+        }
+        out.push('\n');
+    }
+
+    // 5. Objective
+    out.push_str("## Objective\n");
+    out.push_str(objective_for_decision(&report.decision));
+    out.push_str("\n\n");
+
+    // 6. Hard Rules
+    out.push_str("## Hard Rules\n");
+    for rule in hard_rules() {
+        out.push_str(&format!("- {}\n", rule));
+    }
+    out.push('\n');
+
+    // 7. Allowed Commands
+    out.push_str("## Allowed Commands\n");
+    for cmd in allowed_commands(&report.decision) {
+        out.push_str(&format!("- `{}`\n", cmd));
+    }
+    out.push('\n');
+
+    // 8. Forbidden Commands
+    out.push_str("## Forbidden Commands\n");
+    for cmd in forbidden_commands() {
+        out.push_str(&format!("- `{}`\n", cmd));
+    }
+    out.push('\n');
+
+    // 9. Stop Conditions
+    out.push_str("## Stop Conditions\n");
+    for cond in stop_conditions(&report.decision) {
+        out.push_str(&format!("- {}\n", cond));
+    }
+    out.push('\n');
+
+    // 10. Verification Required
+    out.push_str("## Verification Required\n");
+    for cmd in verification_commands(&report.decision) {
+        out.push_str(&format!("- `{}`\n", cmd));
+    }
+    out.push('\n');
+
+    // 11. Final Response Format
+    out.push_str("## Final Response Format\n");
+    for (n, item) in final_response_format().iter().enumerate() {
+        out.push_str(&format!("{}. {}\n", n + 1, item));
+    }
+    out.push('\n');
+
+    out.push_str("<!-- AKAR compiled this prompt from local evidence and foundation playbooks. AKAR did NOT run it automatically. -->\n");
+
+    out
+}
+
+/// The AKAR version, sourced from `CARGO_PKG_VERSION` at compile time.
+fn crate_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+/// The always-on hard rules for a next-run prompt.
+fn hard_rules() -> Vec<&'static str> {
+    vec![
+        "Do not run git reset.",
+        "Do not run git clean.",
+        "Do not run git stash.",
+        "Do not run git checkout.",
+        "Do not push.",
+        "Do not delete user project files.",
+        "Do not modify Claude Code configuration.",
+        "Do not retry blocked commands.",
+        "Do not broaden the task after budget or governor warnings.",
+        "Stop if verification fails.",
+    ]
+}
+
+/// Decision-specific allowed-command additions.
+fn allowed_command_additions(decision: &LoopDecision) -> Vec<&'static str> {
+    match decision {
+        LoopDecision::SnapshotNow => vec!["cargo run -- preflight --snapshot \"<task>\""],
+        LoopDecision::RunPostmortem => vec!["cargo run -- postmortem --diff --baseline"],
+        LoopDecision::CommitCheckpoint => {
+            vec!["git add <explicit files>", "git commit -m \"<message>\""]
+        }
+        LoopDecision::SplitTask => vec!["(no git mutation; write a smaller prompt only)"],
+        LoopDecision::StopHookBroken => {
+            vec!["where.exe akar", "pwsh -NoProfile -Command \"Get-Command akar\""]
+        }
+        LoopDecision::StopRepeatedBlock => vec!["inspect `.akar/HOOK_EVENTS.jsonl`"],
+        _ => vec![],
+    }
+}
+
+/// The always-on allowed commands plus decision-specific additions.
+fn allowed_commands(decision: &LoopDecision) -> Vec<String> {
+    let mut cmds: Vec<String> = vec![
+        "git status".to_string(),
+        "git diff".to_string(),
+        "git diff --stat".to_string(),
+        "git log --oneline -5".to_string(),
+        "cargo build --release".to_string(),
+        "cargo test".to_string(),
+        "cargo run -- --version".to_string(),
+        "cargo run -- status".to_string(),
+        "cargo run -- governor --json --no-exit-code".to_string(),
+        "cargo run -- doctor".to_string(),
+        "cargo run -- eval".to_string(),
+        "cargo run -- hooks --check".to_string(),
+    ];
+    for add in allowed_command_additions(decision) {
+        cmds.push(add.to_string());
+    }
+    cmds
+}
+
+/// The always-on forbidden commands.
+fn forbidden_commands() -> Vec<&'static str> {
+    vec![
+        "git reset",
+        "git clean",
+        "git stash",
+        "git checkout",
+        "git push",
+        "rm -rf /",
+        "rm -rf /*",
+        "sudo rm -rf /",
+        "del /s /q C:\\",
+        "Remove-Item -Recurse -Force C:\\",
+        "broad git add . unless explicitly justified and listed",
+    ]
+}
+
+/// Decision-specific stop-condition additions.
+fn stop_condition_additions(decision: &LoopDecision) -> Vec<&'static str> {
+    match decision {
+        LoopDecision::SnapshotNow => vec!["Stop if snapshot fails."],
+        LoopDecision::RunPostmortem => vec!["Stop if postmortem returns UNKNOWN."],
+        LoopDecision::CommitCheckpoint => vec!["Stop if verification fails before commit."],
+        LoopDecision::SplitTask => vec!["Stop after producing the smaller prompt."],
+        LoopDecision::Unknown => vec!["Stop after reporting unknown state."],
+        _ => vec![],
+    }
+}
+
+/// The always-on stop conditions plus decision-specific additions.
+fn stop_conditions(decision: &LoopDecision) -> Vec<String> {
+    let mut conds: Vec<String> = vec![
+        "Stop if hook evidence is missing when hook behavior is being tested.".to_string(),
+        "Stop if `akar hooks --check` fails.".to_string(),
+        "Stop if `akar safety \"rm -rf /\"` is not BLOCKED during safety proof.".to_string(),
+        "Stop if `cargo test` fails.".to_string(),
+        "Stop if `cargo run -- eval` fails.".to_string(),
+        "Stop if governor decision is STOP_HOOK_BROKEN.".to_string(),
+        "Stop if governor decision is STOP_REPEATED_BLOCK and the plan still retries the same command.".to_string(),
+    ];
+    for add in stop_condition_additions(decision) {
+        conds.push(add.to_string());
+    }
+    conds
+}
+
+/// Decision-specific verification-command additions.
+fn verification_additions(decision: &LoopDecision) -> Vec<&'static str> {
+    match decision {
+        LoopDecision::RunPostmortem => vec!["cargo run -- postmortem --diff --baseline"],
+        LoopDecision::SnapshotNow => vec!["cargo run -- preflight --snapshot \"<task>\""],
+        LoopDecision::CommitCheckpoint => {
+            vec!["git status", "git diff --stat"]
+        }
+        LoopDecision::StopRepeatedBlock => {
+            vec!["read `.akar/HOOK_EVENTS.jsonl` and confirm repeated block evidence"]
+        }
+        _ => vec![],
+    }
+}
+
+/// The always-on verification commands plus decision-specific additions.
+fn verification_commands(decision: &LoopDecision) -> Vec<String> {
+    let mut cmds: Vec<String> = vec![
+        "cargo build --release".to_string(),
+        "cargo test".to_string(),
+        "cargo run -- --version".to_string(),
+        "cargo run -- status".to_string(),
+        "cargo run -- governor --json --no-exit-code".to_string(),
+        "cargo run -- doctor".to_string(),
+        "cargo run -- eval".to_string(),
+        "cargo run -- hooks --check".to_string(),
+    ];
+    for add in verification_additions(decision) {
+        cmds.push(add.to_string());
+    }
+    cmds
+}
+
+/// The final-response-format checklist for a next-run prompt.
+fn final_response_format() -> Vec<&'static str> {
+    vec![
+        "Baseline confirmation",
+        "Files changed",
+        "Governor decision",
+        "NEXT_RUN prompt sections generated",
+        "Safety boundaries confirmed",
+        "Verification results with exact command lines",
+        "Runtime behavior changed: yes/no",
+        "Final commit hash if committed",
+        "Honest conclusion",
+        "Next recommended release",
+    ]
 }
 
 // ---------------------------------------------------------------------------
@@ -1598,7 +1922,8 @@ mod tests {
     #[test]
     fn request_path_still_writes_next_run() {
         // The `akar request` path uses write_governor_next_run, which DOES
-        // write .akar/NEXT_RUN.md. Confirm it still does.
+        // write .akar/NEXT_RUN.md. Confirm it still does. v0.19.0 changed the
+        // file to the compiled next-run prompt; assert the compiled sections.
         let dir = fresh_akar_dir("gov_request_writes");
         let cfg = cfg_with_akar_dir(dir.clone());
         let report = decide(&cfg);
@@ -1607,8 +1932,10 @@ mod tests {
         let next_run = dir.join("NEXT_RUN.md");
         assert!(next_run.exists());
         let content = fs::read_to_string(&next_run).unwrap();
-        assert!(content.contains("## Loop Governor Decision"));
-        assert!(content.contains("## Suggested Next Claude Prompt"));
+        assert!(content.starts_with("# AKAR Next Run\n"));
+        assert!(content.contains("## Governor Decision"));
+        assert!(content.contains("## Objective"));
+        assert!(content.contains("## Final Response Format"));
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -1953,5 +2280,332 @@ mod tests {
         let report = sample_governor_report();
         let result = write_governor_telemetry(&cfg, &report, GovernorTelemetryMode::OneLine, false, 0);
         assert!(result.is_none(), "telemetry must be skipped when .akar/ is absent");
+    }
+
+    // ---- v0.19.0 next-run prompt compiler ---------------------------------
+
+    fn compiler_cfg() -> config::Config {
+        config::Config {
+            project_root: std::env::current_dir().unwrap(),
+            akar_dir: std::path::PathBuf::from("/nonexistent/__akar_compiler_test__"),
+            global_dir: std::path::PathBuf::from("/nonexistent/__akar_compiler_global__"),
+            project_name: "akar-test".to_string(),
+        }
+    }
+
+    fn report_for(decision: LoopDecision) -> LoopGovernorReport {
+        LoopGovernorReport {
+            decision,
+            reason: "synthetic reason".to_string(),
+            next_action: "synthetic next action".to_string(),
+            suggested_prompt: "synthetic suggested prompt".to_string(),
+            evidence_used: vec![
+                "git repository status: available".to_string(),
+                "working tree clean: yes".to_string(),
+            ],
+        }
+    }
+
+    fn empty_evidence_report(decision: LoopDecision) -> LoopGovernorReport {
+        LoopGovernorReport {
+            decision,
+            reason: "r".to_string(),
+            next_action: "a".to_string(),
+            suggested_prompt: "p".to_string(),
+            evidence_used: vec![],
+        }
+    }
+
+    /// Returns the ordered list of `## ` section headers (owned strings).
+    fn section_headers(prompt: &str) -> Vec<String> {
+        prompt
+            .lines()
+            .filter(|l| l.starts_with("## "))
+            .map(|l| l.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn next_run_includes_all_required_sections_in_exact_order() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        let sections = section_headers(&prompt);
+        let expected = [
+            "## Current State",
+            "## Governor Decision",
+            "## Evidence Used",
+            "## Objective",
+            "## Hard Rules",
+            "## Allowed Commands",
+            "## Forbidden Commands",
+            "## Stop Conditions",
+            "## Verification Required",
+            "## Final Response Format",
+        ];
+        let expected: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+        assert_eq!(sections, expected, "sections must appear in exact order");
+        // Title first.
+        assert!(prompt.starts_with("# AKAR Next Run\n"));
+    }
+
+    #[test]
+    fn next_run_includes_akar_version() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        assert!(prompt.contains(&format!("- AKAR version: {}", env!("CARGO_PKG_VERSION"))));
+    }
+
+    #[test]
+    fn next_run_includes_governor_decision() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::SnapshotNow));
+        assert!(prompt.contains("- governor decision: SNAPSHOT_NOW"));
+        assert!(prompt.contains("- decision: SNAPSHOT_NOW"));
+        assert!(prompt.contains("- class: continue-class"));
+    }
+
+    #[test]
+    fn next_run_includes_evidence_used() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        assert!(prompt.contains("- git repository status: available"));
+        assert!(prompt.contains("- working tree clean: yes"));
+    }
+
+    #[test]
+    fn next_run_empty_evidence_writes_placeholder() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &empty_evidence_report(LoopDecision::Ready));
+        assert!(prompt.contains("No evidence files were used."));
+    }
+
+    #[test]
+    fn next_run_includes_hard_rules() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        assert!(prompt.contains("## Hard Rules"));
+        assert!(prompt.contains("- Do not run git reset."));
+        assert!(prompt.contains("- Do not run git clean."));
+        assert!(prompt.contains("- Do not run git stash."));
+        assert!(prompt.contains("- Do not run git checkout."));
+        assert!(prompt.contains("- Do not push."));
+        assert!(prompt.contains("- Do not delete user project files."));
+        assert!(prompt.contains("- Do not modify Claude Code configuration."));
+        assert!(prompt.contains("- Do not retry blocked commands."));
+        assert!(prompt.contains("- Do not broaden the task after budget or governor warnings."));
+        assert!(prompt.contains("- Stop if verification fails."));
+    }
+
+    #[test]
+    fn next_run_includes_allowed_commands() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        assert!(prompt.contains("## Allowed Commands"));
+        assert!(prompt.contains("`git status`"));
+        assert!(prompt.contains("`cargo build --release`"));
+        assert!(prompt.contains("`cargo run -- governor --json --no-exit-code`"));
+        assert!(prompt.contains("`cargo run -- hooks --check`"));
+    }
+
+    #[test]
+    fn next_run_includes_forbidden_commands() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        assert!(prompt.contains("## Forbidden Commands"));
+        assert!(prompt.contains("`git reset`"));
+        assert!(prompt.contains("`rm -rf /`"));
+        assert!(prompt.contains("`sudo rm -rf /`"));
+        assert!(prompt.contains("`Remove-Item -Recurse -Force C:\\`"));
+        assert!(prompt.contains("broad git add . unless explicitly justified and listed"));
+    }
+
+    #[test]
+    fn next_run_includes_stop_conditions() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        assert!(prompt.contains("## Stop Conditions"));
+        assert!(prompt.contains("Stop if `akar hooks --check` fails."));
+        assert!(prompt.contains("Stop if `cargo test` fails."));
+        assert!(prompt.contains("Stop if `cargo run -- eval` fails."));
+        assert!(prompt.contains("Stop if governor decision is STOP_HOOK_BROKEN."));
+    }
+
+    #[test]
+    fn next_run_includes_verification_commands() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        assert!(prompt.contains("## Verification Required"));
+        assert!(prompt.contains("`cargo build --release`"));
+        assert!(prompt.contains("`cargo test`"));
+        assert!(prompt.contains("`cargo run -- eval`"));
+        assert!(prompt.contains("`cargo run -- hooks --check`"));
+    }
+
+    #[test]
+    fn next_run_includes_final_response_format() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        assert!(prompt.contains("## Final Response Format"));
+        assert!(prompt.contains("1. Baseline confirmation"));
+        assert!(prompt.contains("10. Next recommended release"));
+    }
+
+    // -- objective compilation per decision --------------------------------
+
+    #[test]
+    fn ready_objective_compiled_correctly() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        assert!(prompt.contains("Continue the scoped task without broadening the work."));
+    }
+
+    #[test]
+    fn snapshot_now_objective_compiled_correctly() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::SnapshotNow));
+        assert!(prompt.contains("Create a clean baseline snapshot before making changes."));
+        // Decision-specific allowed command addition.
+        assert!(prompt.contains("`cargo run -- preflight --snapshot \"<task>\"`"));
+    }
+
+    #[test]
+    fn run_postmortem_objective_compiled_correctly() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::RunPostmortem));
+        assert!(prompt.contains("Run baseline postmortem before making more changes."));
+        assert!(prompt.contains("`cargo run -- postmortem --diff --baseline`"));
+        assert!(prompt.contains("Stop if postmortem returns UNKNOWN."));
+    }
+
+    #[test]
+    fn commit_checkpoint_objective_compiled_correctly() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::CommitCheckpoint));
+        assert!(prompt.contains("Verify and commit completed AKAR work with explicit files only before starting a new baseline."));
+        assert!(prompt.contains("`git add <explicit files>`"));
+        assert!(prompt.contains("`git commit -m \"<message>\"`"));
+        assert!(prompt.contains("Stop if verification fails before commit."));
+    }
+
+    #[test]
+    fn split_task_objective_compiled_correctly() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::SplitTask));
+        assert!(prompt.contains("Stop the broad task and create one smaller single-purpose prompt."));
+        assert!(prompt.contains("(no git mutation; write a smaller prompt only)"));
+    }
+
+    #[test]
+    fn stop_hook_broken_objective_compiled_correctly() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::StopHookBroken));
+        assert!(prompt.contains("Stop Bash tool work until AKAR is visible in the Claude Code hook subprocess PATH."));
+        assert!(prompt.contains("`where.exe akar`"));
+        assert!(prompt.contains("`pwsh -NoProfile -Command \"Get-Command akar\"`"));
+    }
+
+    #[test]
+    fn stop_repeated_block_objective_compiled_correctly() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::StopRepeatedBlock));
+        assert!(prompt.contains("Do not retry the blocked command. Replace it with a safe alternative."));
+        assert!(prompt.contains("inspect `.akar/HOOK_EVENTS.jsonl`"));
+    }
+
+    #[test]
+    fn unknown_objective_compiled_correctly() {
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Unknown));
+        assert!(prompt.contains("Inspect AKAR and git state manually before continuing."));
+        assert!(prompt.contains("Stop after reporting unknown state."));
+    }
+
+    // -- decision class ----------------------------------------------------
+
+    #[test]
+    fn decision_class_continue_for_ready_and_snapshot() {
+        assert_eq!(LoopDecision::Ready.decision_class(), DecisionClass::Continue);
+        assert_eq!(LoopDecision::SnapshotNow.decision_class(), DecisionClass::Continue);
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Ready));
+        assert!(prompt.contains("- class: continue-class"));
+    }
+
+    #[test]
+    fn decision_class_action_required_for_postmortem_commit_split() {
+        assert_eq!(LoopDecision::RunPostmortem.decision_class(), DecisionClass::ActionRequired);
+        assert_eq!(LoopDecision::CommitCheckpoint.decision_class(), DecisionClass::ActionRequired);
+        assert_eq!(LoopDecision::SplitTask.decision_class(), DecisionClass::ActionRequired);
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::SplitTask));
+        assert!(prompt.contains("- class: action-required"));
+    }
+
+    #[test]
+    fn decision_class_stop_for_hook_broken_repeated_unknown() {
+        assert_eq!(LoopDecision::StopHookBroken.decision_class(), DecisionClass::Stop);
+        assert_eq!(LoopDecision::StopRepeatedBlock.decision_class(), DecisionClass::Stop);
+        assert_eq!(LoopDecision::Unknown.decision_class(), DecisionClass::Stop);
+        let cfg = compiler_cfg();
+        let prompt = compile_next_run_prompt(&cfg, &report_for(LoopDecision::Unknown));
+        assert!(prompt.contains("- class: stop-class"));
+    }
+
+    // -- request writes compiled NEXT_RUN.md; governor does not ------------
+
+    #[test]
+    fn request_writes_compiled_next_run_md() {
+        let dir = fresh_akar_dir("compiler_request_write");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = report_for(LoopDecision::Ready);
+        let path = write_governor_next_run(&cfg, &report);
+        assert!(path.is_some());
+        let content = fs::read_to_string(dir.join("NEXT_RUN.md")).unwrap();
+        assert!(content.starts_with("# AKAR Next Run\n"));
+        assert!(content.contains("## Current State"));
+        assert!(content.contains("## Governor Decision"));
+        assert!(content.contains("## Objective"));
+        assert!(content.contains("## Final Response Format"));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn governor_command_path_does_not_write_next_run_md() {
+        // `akar governor` (any mode) computes decide() + a formatter and does
+        // NOT call write_governor_next_run. Simulate that path.
+        let dir = fresh_akar_dir("compiler_gov_no_write");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        let _ = format_governor_report(&report);
+        let _ = format_governor_one_line(&report);
+        let _ = format_governor_json(&report);
+        assert!(
+            !dir.join("NEXT_RUN.md").exists(),
+            "governor command path must not write NEXT_RUN.md"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn compiled_prompt_sections_have_stable_order_across_decisions() {
+        // The 10 section headers must appear in the same order for every
+        // decision (only their contents differ).
+        let cfg = compiler_cfg();
+        let decisions = [
+            LoopDecision::Ready,
+            LoopDecision::SnapshotNow,
+            LoopDecision::RunPostmortem,
+            LoopDecision::CommitCheckpoint,
+            LoopDecision::SplitTask,
+            LoopDecision::StopHookBroken,
+            LoopDecision::StopRepeatedBlock,
+            LoopDecision::Unknown,
+        ];
+        let first = section_headers(&compile_next_run_prompt(&cfg, &report_for(decisions[0].clone())));
+        assert_eq!(first.len(), 10);
+        for d in decisions.iter().skip(1) {
+            let p = compile_next_run_prompt(&cfg, &report_for(d.clone()));
+            assert_eq!(section_headers(&p), first, "section order differs for {:?}", d);
+        }
     }
 }
