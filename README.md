@@ -22,6 +22,26 @@ It does not write your code. It does not execute fixes. It does not edit project
 - Writes generic learning notes if something degraded or failed
 - Prints hook installation instructions (does not install hooks automatically)
 
+## Foundation knowledge
+
+AKAR v0.12.0 carries local playbooks for safe git, shell, hook, and loop behavior.
+
+- `docs/foundation/AKAR_FOUNDATION.md` — first principles
+- `docs/foundation/SAFE_GIT_PLAYBOOK.md` — allowed and forbidden git patterns
+- `docs/foundation/SAFE_SHELL_PLAYBOOK.md` — blocked shell commands and safe alternatives
+- `docs/foundation/CLAUDE_CODE_HOOK_PLAYBOOK.md` — hook integration guidance
+- `docs/foundation/LOOP_ENGINEERING_PLAYBOOK.md` — proven AKAR session loop
+
+Guidance from these playbooks surfaces automatically in command output:
+- `akar safety "..."` — BLOCKED output includes a safe alternative
+- `akar status` — BLOCKED readiness includes git dirty guidance
+- `akar postmortem --diff` — EXCEEDED output includes split-task guidance
+- `akar hooks --check` — FAIL output includes hook broken guidance
+
+AKAR provides alternatives before retry. It does not execute the playbooks automatically.
+
+---
+
 ## What it does not do
 
 - It is not an AI model

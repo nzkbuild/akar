@@ -270,6 +270,7 @@ pub fn format_hooks_check(result: &HooksCheckResult) -> String {
         for name in &result.templates_missing {
             out.push_str(&format!("    - {}\n", name));
         }
+        out.push_str(&format!("  guidance: {}\n", crate::foundation::hook_broken_playbook()));
     }
 
     out

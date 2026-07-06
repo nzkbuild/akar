@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.12.0 — 2026-07-06
+Foundation Knowledge Pack. Added local playbook layer: docs/foundation/AKAR_FOUNDATION.md (first principles), SAFE_GIT_PLAYBOOK.md, SAFE_SHELL_PLAYBOOK.md, CLAUDE_CODE_HOOK_PLAYBOOK.md, LOOP_ENGINEERING_PLAYBOOK.md. Added src/foundation.rs with six static guidance functions (git_dirty_playbook, blocked_shell_playbook, hook_broken_playbook, budget_exceeded_playbook, snapshot_required_playbook, repeated_block_playbook). Integrated guidance into four commands: akar safety BLOCKED output includes safe alternative; akar status BLOCKED readiness includes git dirty guidance; akar postmortem --diff EXCEEDED output includes split-task guidance; akar hooks --check FAIL output includes hook broken guidance. Added 22 new tests (16 foundation unit + 6 integration). 273 tests passing. No mission execution added. No auto-commit. No config mutation.
+
 ## v0.11.0 — 2026-07-05
 Full Loop with Mid-Session BLOCK. Proved the complete AKAR baseline loop survives a mid-session destructive command block: committed clean tree → akar status READY → snapshot at HEAD 35a2e29622fd → `rm -rf /` attempted mid-session → PreToolUse hook fired automatically, BLOCKED with exit 2 before execution → session continued → corrected stale version string in docs/INSTALL.md (1 file, 2 LOC) → akar postmortem --diff --baseline → PASS. HOOK_EVENTS.jsonl shows ALLOW → BLOCK → ALLOW. No runtime behavior changed. Added docs/audits/AKAR_V0_11_MID_SESSION_BLOCK_REPORT.md. 251 tests passing.
 

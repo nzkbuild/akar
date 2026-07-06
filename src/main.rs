@@ -1,6 +1,7 @@
 mod backup;
 mod bootstrap;
 mod diff_budget;
+mod foundation;
 mod hooks;
 mod init;
 mod config;
@@ -226,6 +227,10 @@ fn cmd_status() {
     println!();
     print!("{}", diff_budget::format_loop_readiness(&readiness));
 
+    if matches!(readiness.readiness, diff_budget::LoopReadiness::Blocked) {
+        println!("  guidance: {}", foundation::git_dirty_playbook());
+    }
+
     if !issues.is_empty() {
         println!("  issues:");
         for issue in &issues {
@@ -375,6 +380,7 @@ fn cmd_safety(command: Option<&str>) {
             }
 
             if assessment.blocked {
+                println!("  guidance: {}", foundation::blocked_shell_playbook(cmd));
                 process::exit(2);
             }
         }
@@ -504,6 +510,10 @@ fn cmd_postmortem(diff_mode: bool, baseline_mode: bool, task_name: Option<String
         };
         print!("{}", diff_budget::format_diff_report(&diff_report));
 
+        if matches!(verdict, diff_budget::BudgetVerdict::Exceeded { .. }) {
+            println!("  guidance: {}", foundation::budget_exceeded_playbook());
+        }
+
         if matches!(verdict, diff_budget::BudgetVerdict::Exceeded { .. }) && cfg.akar_dir.exists() {
             write_diff_learning_patch(
                 &cfg,
@@ -552,6 +562,10 @@ fn cmd_postmortem(diff_mode: bool, baseline_mode: bool, task_name: Option<String
         task_type: task_label,
     };
     print!("{}", diff_budget::format_diff_report(&diff_report));
+
+    if matches!(verdict, diff_budget::BudgetVerdict::Exceeded { .. }) {
+        println!("  guidance: {}", foundation::budget_exceeded_playbook());
+    }
 
     // Append learning patch when budget exceeded.
     if matches!(verdict, diff_budget::BudgetVerdict::Exceeded { .. }) && cfg.akar_dir.exists() {
@@ -735,5 +749,73 @@ mod tests {
     #[test]
     fn version_matches_cargo_pkg_version() {
         assert_eq!(VERSION, env!("CARGO_PKG_VERSION"));
+    }
+
+    // -- foundation integration: safety BLOCKED output -----------------------
+
+    #[test]
+    fn safety_blocked_output_includes_safe_alternative() {
+        let cmd = "rm -rf /some/path";
+        let assessment = safety::classify_command(cmd);
+        if assessment.blocked {
+            let guidance = foundation::blocked_shell_playbook(cmd);
+            assert!(
+                guidance.contains("safe alternative") || guidance.contains("inspect") || guidance.contains("local"),
+                "blocked safety output must include safe alternative guidance"
+            );
+        }
+    }
+
+    #[test]
+    fn safety_blocked_shell_playbook_does_not_retry() {
+        let guidance = foundation::blocked_shell_playbook("git push --force");
+        assert!(
+            !guidance.to_lowercase().contains("retry"),
+            "guidance must not suggest retrying the blocked command"
+        );
+    }
+
+    // -- foundation integration: status BLOCKED git guidance -----------------
+
+    #[test]
+    fn status_blocked_git_guidance_mentions_commit() {
+        let guidance = foundation::git_dirty_playbook();
+        assert!(
+            guidance.contains("git commit") || guidance.contains("commit"),
+            "status BLOCKED guidance must mention committing work"
+        );
+    }
+
+    #[test]
+    fn status_blocked_git_guidance_does_not_mention_reset() {
+        let guidance = foundation::git_dirty_playbook();
+        assert!(!guidance.contains("git reset"), "must not suggest git reset");
+    }
+
+    // -- foundation integration: postmortem EXCEEDED guidance ----------------
+
+    #[test]
+    fn postmortem_exceeded_guidance_mentions_split_task() {
+        let guidance = foundation::budget_exceeded_playbook();
+        assert!(
+            guidance.contains("split") || guidance.contains("reduce scope"),
+            "postmortem EXCEEDED guidance must mention split task or reduce scope"
+        );
+    }
+
+    // -- foundation integration: hooks check FAIL guidance -------------------
+
+    #[test]
+    fn hooks_check_fail_output_includes_hook_broken_guidance() {
+        let result = hooks::HooksCheckResult {
+            templates_found: vec![],
+            templates_missing: vec!["pre-tool-call.sh".to_string()],
+            all_valid: false,
+        };
+        let output = hooks::format_hooks_check(&result);
+        assert!(
+            output.contains("PATH") || output.contains("restart") || output.contains("guidance"),
+            "hooks check FAIL output must include hook broken guidance"
+        );
     }
 }
