@@ -18,7 +18,7 @@
 
 use std::path::Path;
 
-use crate::{config, diff_budget, foundation, learn};
+use crate::{config, diff_budget, event_log, foundation, learn};
 
 // ---------------------------------------------------------------------------
 // Loop decision
@@ -719,6 +719,76 @@ pub fn write_governor_next_run(
     );
     std::fs::write(&path, content).ok()?;
     Some(path)
+}
+
+// ---------------------------------------------------------------------------
+// Opt-in governor telemetry (v0.18.0)
+// ---------------------------------------------------------------------------
+
+/// Output mode that produced a governor call, recorded in telemetry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GovernorTelemetryMode {
+    Human,
+    OneLine,
+    Json,
+}
+
+impl GovernorTelemetryMode {
+    /// Machine-readable mode label for the telemetry event.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            GovernorTelemetryMode::Human => "human",
+            GovernorTelemetryMode::OneLine => "one-line",
+            GovernorTelemetryMode::Json => "json",
+        }
+    }
+}
+
+/// Append one governor telemetry event to `.akar/EVENT_LOG.jsonl`.
+///
+/// Opt-in only (v0.18.0): the caller decides whether to invoke this. The
+/// default governor path never calls it. The event is a single JSONL line
+/// with fields: `timestamp`, `event` ("governor"), `decision`, `reason`
+/// (redacted), `exit_code`, `mode`, `no_exit_code`.
+///
+/// - Does NOT log the suggested prompt (it may be long).
+/// - Redacts obvious secrets in `reason` via `config::redact`.
+/// - Does not mutate git or execute anything.
+///
+/// Returns the path written, or `None` if `.akar/` does not exist or the
+/// write fails. Never panics.
+pub fn write_governor_telemetry(
+    cfg: &config::Config,
+    report: &LoopGovernorReport,
+    mode: GovernorTelemetryMode,
+    no_exit_code: bool,
+    exit_code: i32,
+) -> Option<std::path::PathBuf> {
+    if !cfg.akar_dir.exists() {
+        return None;
+    }
+    let log_path = cfg.akar_dir.join("EVENT_LOG.jsonl");
+    let ts = event_log::now_iso8601();
+    // Redact the reason — it may echo command previews that contain secrets.
+    // The suggested prompt is intentionally NOT logged (length + content).
+    let reason = config::redact(&report.reason);
+    let line = format!(
+        "{{\"timestamp\":\"{ts}\",\"event\":\"governor\",\"decision\":\"{decision}\",\"reason\":\"{reason}\",\"exit_code\":{exit_code},\"mode\":\"{mode}\",\"no_exit_code\":{no_exit_code}}}",
+        ts = json_escape(&ts),
+        decision = json_escape(report.decision.as_str()),
+        reason = json_escape(&reason),
+        exit_code = exit_code,
+        mode = json_escape(mode.as_str()),
+        no_exit_code = if no_exit_code { "true" } else { "false" },
+    );
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    if let Ok(mut f) = OpenOptions::new().append(true).create(true).open(&log_path) {
+        if writeln!(f, "{}", line).is_ok() {
+            return Some(log_path);
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -1659,5 +1729,229 @@ mod tests {
         // status/request formatters are unchanged.
         assert!(format_loop_governor(&report).contains("loop governor:"));
         assert!(format_next_run_block(&report).contains("## Loop Governor Decision"));
+    }
+
+    // ---- v0.18.0 opt-in governor telemetry --------------------------------
+
+    /// Read the last non-empty line of a JSONL log, or None if absent.
+    fn last_jsonl_line(path: &Path) -> Option<String> {
+        let lines = read_jsonl_lines(path);
+        lines.last().cloned()
+    }
+
+    #[test]
+    fn default_governor_path_does_not_write_telemetry() {
+        // The governor telemetry writer is opt-in. The default governor path
+        // (no --telemetry flag, no env var) never calls write_governor_telemetry.
+        // Simulate that path: decide() + formatters only, no telemetry call.
+        let dir = fresh_akar_dir("telem_default");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        let _ = format_governor_report(&report);
+        let _ = format_governor_one_line(&report);
+        let _ = format_governor_json(&report);
+        let log = dir.join("EVENT_LOG.jsonl");
+        assert!(!log.exists(), "default governor path must not write telemetry");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn telemetry_flag_writes_one_governor_event() {
+        let dir = fresh_akar_dir("telem_flag");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        let path = write_governor_telemetry(
+            &cfg,
+            &report,
+            GovernorTelemetryMode::OneLine,
+            false,
+            report.decision.exit_code(),
+        );
+        assert!(path.is_some(), "telemetry should be written");
+        let log = dir.join("EVENT_LOG.jsonl");
+        assert!(log.exists());
+        let lines = read_jsonl_lines(&log);
+        assert_eq!(lines.len(), 1, "exactly one governor event expected");
+        let line = &lines[0];
+        assert!(line.contains("\"event\":\"governor\""));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn telemetry_event_includes_decision() {
+        let dir = fresh_akar_dir("telem_decision");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        let _ = write_governor_telemetry(
+            &cfg,
+            &report,
+            GovernorTelemetryMode::Human,
+            false,
+            report.decision.exit_code(),
+        );
+        let line = last_jsonl_line(&dir.join("EVENT_LOG.jsonl")).unwrap();
+        assert!(line.contains(&format!("\"decision\":\"{}\"", report.decision.as_str())));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn telemetry_event_includes_exit_code() {
+        let dir = fresh_akar_dir("telem_exit");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        let expected_code = report.decision.exit_code();
+        let _ = write_governor_telemetry(
+            &cfg,
+            &report,
+            GovernorTelemetryMode::Json,
+            false,
+            expected_code,
+        );
+        let line = last_jsonl_line(&dir.join("EVENT_LOG.jsonl")).unwrap();
+        assert!(line.contains(&format!("\"exit_code\":{}", expected_code)));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn telemetry_event_includes_mode() {
+        let dir = fresh_akar_dir("telem_mode");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        for mode in [
+            GovernorTelemetryMode::Human,
+            GovernorTelemetryMode::OneLine,
+            GovernorTelemetryMode::Json,
+        ] {
+            let _ = write_governor_telemetry(&cfg, &report, mode, false, 0);
+        }
+        let lines = read_jsonl_lines(&dir.join("EVENT_LOG.jsonl"));
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].contains("\"mode\":\"human\""));
+        assert!(lines[1].contains("\"mode\":\"one-line\""));
+        assert!(lines[2].contains("\"mode\":\"json\""));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn telemetry_event_includes_no_exit_code() {
+        let dir = fresh_akar_dir("telem_no_exit");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        // With --no-exit-code, no_exit_code=true and the effective exit code is 0.
+        let _ = write_governor_telemetry(&cfg, &report, GovernorTelemetryMode::OneLine, true, 0);
+        let line = last_jsonl_line(&dir.join("EVENT_LOG.jsonl")).unwrap();
+        assert!(line.contains("\"no_exit_code\":true"));
+        assert!(line.contains("\"exit_code\":0"));
+        // And the false case.
+        let _ = write_governor_telemetry(&cfg, &report, GovernorTelemetryMode::OneLine, false, 10);
+        let line2 = last_jsonl_line(&dir.join("EVENT_LOG.jsonl")).unwrap();
+        assert!(line2.contains("\"no_exit_code\":false"));
+        assert!(line2.contains("\"exit_code\":10"));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn telemetry_one_line_with_telemetry_still_one_line_output() {
+        // --one-line --telemetry must still print exactly one line of output
+        // (the formatter is unchanged; telemetry is a separate side effect).
+        let dir = fresh_akar_dir("telem_oneline_output");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        let out = format_governor_one_line(&report);
+        assert_eq!(out.lines().count(), 1);
+        // Telemetry is written in parallel.
+        let _ = write_governor_telemetry(&cfg, &report, GovernorTelemetryMode::OneLine, false, 0);
+        let log = dir.join("EVENT_LOG.jsonl");
+        assert!(log.exists());
+        // Output line count is still 1.
+        assert_eq!(out.lines().count(), 1);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn telemetry_json_with_telemetry_still_json_output() {
+        let dir = fresh_akar_dir("telem_json_output");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        let out = format_governor_json(&report);
+        assert!(out.starts_with('{') && out.ends_with('}'));
+        let _ = write_governor_telemetry(&cfg, &report, GovernorTelemetryMode::Json, false, 0);
+        assert!(dir.join("EVENT_LOG.jsonl").exists());
+        // JSON output unchanged by telemetry.
+        assert!(out.starts_with('{') && out.ends_with('}'));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn telemetry_no_exit_code_records_true_and_effective_zero() {
+        // --no-exit-code --telemetry: no_exit_code=true and exit_code=0 in the
+        // recorded event, even when the decision's native code is non-zero.
+        let dir = fresh_akar_dir("telem_noexit_effective");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = LoopGovernorReport {
+            decision: LoopDecision::RunPostmortem, // native code 10
+            reason: "baseline exists and working tree is dirty".to_string(),
+            next_action: "a".to_string(),
+            suggested_prompt: "p".to_string(),
+            evidence_used: vec![],
+        };
+        let native = report.decision.exit_code();
+        assert_eq!(native, 10);
+        let effective = 0; // --no-exit-code forces 0
+        let _ = write_governor_telemetry(&cfg, &report, GovernorTelemetryMode::OneLine, true, effective);
+        let line = last_jsonl_line(&dir.join("EVENT_LOG.jsonl")).unwrap();
+        assert!(line.contains("\"no_exit_code\":true"));
+        assert!(line.contains("\"exit_code\":0"));
+        assert!(line.contains("\"decision\":\"RUN_POSTMORTEM\""));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn telemetry_redacts_obvious_secrets_in_reason() {
+        let dir = fresh_akar_dir("telem_redact");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = LoopGovernorReport {
+            decision: LoopDecision::StopRepeatedBlock,
+            reason: "same command blocked 2 times within recent 50 hook events: token=sk-secretvalue".to_string(),
+            next_action: "a".to_string(),
+            suggested_prompt: "p".to_string(),
+            evidence_used: vec![],
+        };
+        let _ = write_governor_telemetry(&cfg, &report, GovernorTelemetryMode::OneLine, false, 21);
+        let line = last_jsonl_line(&dir.join("EVENT_LOG.jsonl")).unwrap();
+        assert!(!line.contains("sk-secretvalue"), "secret must be redacted: {}", line);
+        assert!(line.contains("[REDACTED]"), "redaction marker expected: {}", line);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn telemetry_does_not_log_suggested_prompt() {
+        let dir = fresh_akar_dir("telem_no_prompt");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = LoopGovernorReport {
+            decision: LoopDecision::SnapshotNow,
+            reason: "no baseline and clean tree".to_string(),
+            next_action: "a".to_string(),
+            suggested_prompt: "UNIQUE_PROMPT_MARKER_DO_NOT_LOG".to_string(),
+            evidence_used: vec![],
+        };
+        let _ = write_governor_telemetry(&cfg, &report, GovernorTelemetryMode::OneLine, false, 0);
+        let line = last_jsonl_line(&dir.join("EVENT_LOG.jsonl")).unwrap();
+        assert!(!line.contains("UNIQUE_PROMPT_MARKER_DO_NOT_LOG"), "must not log suggested prompt");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn telemetry_returns_none_when_akar_dir_missing() {
+        // If .akar/ does not exist, telemetry is silently skipped.
+        let cfg = config::Config {
+            project_root: std::env::current_dir().unwrap(),
+            akar_dir: std::path::PathBuf::from("/nonexistent/__akar_telem_missing__"),
+            global_dir: std::path::PathBuf::from("/nonexistent/__akar_telem_global__"),
+            project_name: "test".to_string(),
+        };
+        let report = sample_governor_report();
+        let result = write_governor_telemetry(&cfg, &report, GovernorTelemetryMode::OneLine, false, 0);
+        assert!(result.is_none(), "telemetry must be skipped when .akar/ is absent");
     }
 }

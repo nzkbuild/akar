@@ -50,7 +50,14 @@ fn main() {
             let one_line = args.iter().any(|a| a == "--one-line");
             let json_mode = args.iter().any(|a| a == "--json");
             let no_exit_code = args.iter().any(|a| a == "--no-exit-code");
-            let code = cmd_governor(one_line, json_mode, no_exit_code);
+            // Telemetry is opt-in: --telemetry flag OR AKAR_GOVERNOR_TELEMETRY=1.
+            // Default (neither set) writes nothing.
+            let telemetry_flag = args.iter().any(|a| a == "--telemetry");
+            let telemetry_env = std::env::var("AKAR_GOVERNOR_TELEMETRY")
+                .map(|v| v == "1")
+                .unwrap_or(false);
+            let telemetry = telemetry_flag || telemetry_env;
+            let code = cmd_governor(one_line, json_mode, no_exit_code, telemetry);
             // Exit codes are for orchestration only. AKAR still does not
             // execute the suggested action. --no-exit-code forces 0 so the
             // command is safe to call in pipelines that check $?
@@ -163,6 +170,7 @@ fn print_usage() {
     println!("  governor --one-line  Print DECISION<TAB>SUGGESTED_PROMPT on one line");
     println!("  governor --json      Print the loop governor decision as JSON");
     println!("  governor --no-exit-code  Print output but always exit 0");
+    println!("  governor --telemetry     Also record the decision in .akar/EVENT_LOG.jsonl (opt-in)");
     println!("  doctor      Read-only health check of AKAR and project config");
     println!("  doctor --fix  Apply safe fixes for detected issues (backs up before overwriting)");
     println!("  bootstrap   Initialize missing AKAR memory files for a project");
@@ -274,11 +282,22 @@ fn cmd_status() {
 /// SPLIT_TASK=12, STOP_HOOK_BROKEN=20, STOP_REPEATED_BLOCK=21, UNKNOWN=30.
 /// `no_exit_code` forces the return to 0 while keeping identical output.
 ///
-/// Advisory only: does not write files, does not mutate git, does not execute
-/// the suggested action.
-fn cmd_governor(one_line: bool, json_mode: bool, no_exit_code: bool) -> i32 {
+/// `telemetry` (v0.18.0, opt-in via `--telemetry` or `AKAR_GOVERNOR_TELEMETRY=1`)
+/// appends one governor event to `.akar/EVENT_LOG.jsonl`. Default writes
+/// nothing.
+///
+/// Advisory only: does not mutate git, does not execute the suggested action.
+fn cmd_governor(one_line: bool, json_mode: bool, no_exit_code: bool, telemetry: bool) -> i32 {
     let cfg = config::Config::discover();
     let report = loop_governor::decide(&cfg);
+
+    let mode = if one_line {
+        loop_governor::GovernorTelemetryMode::OneLine
+    } else if json_mode {
+        loop_governor::GovernorTelemetryMode::Json
+    } else {
+        loop_governor::GovernorTelemetryMode::Human
+    };
 
     if one_line {
         println!("{}", loop_governor::format_governor_one_line(&report));
@@ -288,11 +307,19 @@ fn cmd_governor(one_line: bool, json_mode: bool, no_exit_code: bool) -> i32 {
         print!("{}", loop_governor::format_governor_report(&report));
     }
 
-    if no_exit_code {
+    let exit_code = if no_exit_code {
         0
     } else {
         loop_governor::exit_code_for_decision(&report)
+    };
+
+    if telemetry {
+        // Opt-in telemetry: record this governor call in the local event log.
+        // The suggested prompt is intentionally NOT logged.
+        let _ = loop_governor::write_governor_telemetry(&cfg, &report, mode, no_exit_code, exit_code);
     }
+
+    exit_code
 }
 
 fn cmd_run(prompt: &str, used: Option<u64>, limit: Option<u64>) {

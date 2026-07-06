@@ -84,6 +84,9 @@ Repeated blocked commands are detected from recent hook evidence (the most recen
 - `akar governor --one-line` — exactly one line: `DECISION<TAB>SUGGESTED_PROMPT` (no decoration, no color)
 - `akar governor --json` — a single JSON object with `decision`, `reason`, `next_action`, `suggested_prompt`, `evidence_used`
 - `akar governor --no-exit-code` — print the same output but always exit 0
+- `akar governor --telemetry` — also record the decision in `.akar/EVENT_LOG.jsonl` (opt-in; composable with `--one-line`/`--json`/`--no-exit-code`)
+
+By default `akar governor` writes no files and records nothing. Telemetry is **opt-in and local-only**: enable it with `--telemetry` or by setting `AKAR_GOVERNOR_TELEMETRY=1`. When enabled, one JSONL event is appended to `.akar/EVENT_LOG.jsonl` with `timestamp`, `event: "governor"`, `decision`, `reason` (redacted), `exit_code`, `mode`, and `no_exit_code`. The suggested prompt is never logged.
 
 `akar governor` (in all output modes) returns an exit code based on the decision so an orchestrator can branch on `$?` without parsing output:
 
