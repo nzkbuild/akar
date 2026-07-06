@@ -46,6 +46,11 @@ fn main() {
             print_usage();
         }
         "status" => cmd_status(),
+        "governor" => {
+            let one_line = args.iter().any(|a| a == "--one-line");
+            let json_mode = args.iter().any(|a| a == "--json");
+            cmd_governor(one_line, json_mode);
+        }
         "doctor" => {
             let fix_mode = args.get(2).map(|s| s.as_str()) == Some("--fix");
             cmd_doctor(fix_mode);
@@ -149,6 +154,9 @@ fn print_usage() {
     println!("  init            First-run onboarding: bootstrap + doctor + next-steps guide");
     println!("  init --claude   Include Claude Code integration instructions");
     println!("  status      Show runtime health and current session state");
+    println!("  governor   Print the loop governor decision (next safe action)");
+    println!("  governor --one-line  Print DECISION<TAB>SUGGESTED_PROMPT on one line");
+    println!("  governor --json      Print the loop governor decision as JSON");
     println!("  doctor      Read-only health check of AKAR and project config");
     println!("  doctor --fix  Apply safe fixes for detected issues (backs up before overwriting)");
     println!("  bootstrap   Initialize missing AKAR memory files for a project");
@@ -247,6 +255,29 @@ fn cmd_status() {
             println!("    - {}", issue.message);
         }
     }
+}
+
+/// `akar governor` — concise, machine-readable loop governor decision.
+///
+/// Reads the same governor decision as `akar status` but prints it in a
+/// standalone, scrape-friendly form. Supports `--one-line` (a single
+/// `DECISION<TAB>SUGGESTED_PROMPT` line) and `--json` (a single JSON object).
+///
+/// Advisory only: does not write files, does not mutate git, does not execute
+/// the suggested action.
+fn cmd_governor(one_line: bool, json_mode: bool) {
+    let cfg = config::Config::discover();
+    let report = loop_governor::decide(&cfg);
+
+    if one_line {
+        println!("{}", loop_governor::format_governor_one_line(&report));
+        return;
+    }
+    if json_mode {
+        println!("{}", loop_governor::format_governor_json(&report));
+        return;
+    }
+    print!("{}", loop_governor::format_governor_report(&report));
 }
 
 fn cmd_run(prompt: &str, used: Option<u64>, limit: Option<u64>) {

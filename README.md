@@ -76,6 +76,21 @@ Repeated blocked commands are detected from recent hook evidence (the most recen
 
 ---
 
+## Governor command
+
+`akar governor` exposes the loop governor decision in a concise, machine-readable form so Claude or a session orchestrator can read AKAR's next-action decision without scraping full `akar status` output.
+
+- `akar governor` — human-readable: decision, reason, next action, suggested prompt, evidence used
+- `akar governor --one-line` — exactly one line: `DECISION<TAB>SUGGESTED_PROMPT` (no decoration, no color)
+- `akar governor --json` — a single JSON object with `decision`, `reason`, `next_action`, `suggested_prompt`, `evidence_used`
+
+- the command is advisory-only
+- it does not execute the next action
+- it does not write files or mutate git
+- it is intended for Claude/session orchestration
+
+---
+
 ## Learning patch lifecycle
 
 AKAR v0.14.0 gives learning patches a status so stale `.akar/LEARNING_PATCHES.md` entries stop forcing `SPLIT_TASK` forever while useful unresolved lessons are preserved.

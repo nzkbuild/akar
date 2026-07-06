@@ -514,8 +514,98 @@ pub fn format_loop_governor(report: &LoopGovernorReport) -> String {
     out
 }
 
+/// Format the standalone `akar governor` human-readable report: decision,
+/// reason, next action, suggested prompt, and evidence used. Advisory only.
+pub fn format_governor_report(report: &LoopGovernorReport) -> String {
+    let mut out = String::new();
+    out.push_str("governor:\n");
+    out.push_str(&format!("  decision:    {}\n", report.decision.as_str()));
+    out.push_str(&format!("  reason:      {}\n", report.reason));
+    out.push_str(&format!("  next action: {}\n", indent_continuation_gov(&report.next_action)));
+    out.push_str(&format!("  suggested prompt: {}\n", one_line(&report.suggested_prompt)));
+    out.push_str("  evidence used:\n");
+    if report.evidence_used.is_empty() {
+        out.push_str("    - (none)\n");
+    } else {
+        for e in &report.evidence_used {
+            out.push_str(&format!("    - {}\n", e));
+        }
+    }
+    out
+}
+
+/// Format the governor decision as exactly one line:
+/// `DECISION<TAB>SUGGESTED_PROMPT`.
+///
+/// No extra decoration, no color, no multiline. The suggested prompt is
+/// collapsed to a single line. Always emits exactly one line (no trailing
+/// content beyond the single newline added by the caller's `println!`).
+pub fn format_governor_one_line(report: &LoopGovernorReport) -> String {
+    format!(
+        "{}\t{}",
+        report.decision.as_str(),
+        one_line(&report.suggested_prompt)
+    )
+}
+
+/// Escape a string for use inside a JSON double-quoted value.
+/// Covers the characters required by RFC 8259 §7. Std-only, no external deps.
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 4);
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Format the governor decision as a single-line JSON object with fields:
+/// `decision`, `reason`, `next_action`, `suggested_prompt`, `evidence_used`.
+///
+/// `evidence_used` is a JSON array of strings. Valid JSON, std-only.
+pub fn format_governor_json(report: &LoopGovernorReport) -> String {
+    let evidence: Vec<String> = report
+        .evidence_used
+        .iter()
+        .map(|e| format!("\"{}\"", json_escape(e)))
+        .collect();
+    format!(
+        "{{\"decision\":\"{decision}\",\"reason\":\"{reason}\",\"next_action\":\"{next_action}\",\"suggested_prompt\":\"{suggested_prompt}\",\"evidence_used\":[{evidence}]}}",
+        decision = json_escape(report.decision.as_str()),
+        reason = json_escape(&report.reason),
+        next_action = json_escape(&one_line(&report.next_action)),
+        suggested_prompt = json_escape(&one_line(&report.suggested_prompt)),
+        evidence = evidence.join(","),
+    )
+}
+
 /// Indent continuation lines of a (possibly multi-line) string so they align
-/// under the `next action:` label value.
+/// under the `next action:` value for the standalone governor report.
+fn indent_continuation_gov(s: &str) -> String {
+    let mut lines = s.lines();
+    let mut out = String::new();
+    if let Some(first) = lines.next() {
+        out.push_str(first);
+    }
+    for l in lines {
+        out.push('\n');
+        out.push_str("                ");
+        out.push_str(l);
+    }
+    out
+}
+
+/// Indent continuation lines of a (possibly multi-line) string so they align
+/// under the `next action:` label value (status block variant).
 fn indent_continuation(s: &str) -> String {
     let mut lines = s.lines();
     let mut out = String::new();
@@ -1205,5 +1295,225 @@ mod tests {
         // case-insensitive decision
         let d = r#"{"decision":"error","message":"akar not found"}"#;
         assert!(is_hook_not_found_error(d));
+    }
+
+    // ---- v0.16.0 governor command output formatters --------------------
+
+    fn sample_governor_report() -> LoopGovernorReport {
+        LoopGovernorReport {
+            decision: LoopDecision::SnapshotNow,
+            reason: "no baseline and clean tree".to_string(),
+            next_action: "take a snapshot now".to_string(),
+            suggested_prompt: snapshot_prompt().to_string(),
+            evidence_used: vec![
+                "git repository status: available".to_string(),
+                "working tree clean: yes".to_string(),
+            ],
+        }
+    }
+
+    #[test]
+    fn governor_default_output_includes_decision() {
+        let report = sample_governor_report();
+        let out = format_governor_report(&report);
+        assert!(out.starts_with("governor:"));
+        assert!(out.contains("decision:    SNAPSHOT_NOW"));
+    }
+
+    #[test]
+    fn governor_default_output_includes_suggested_prompt() {
+        let report = sample_governor_report();
+        let out = format_governor_report(&report);
+        assert!(out.contains("suggested prompt:"));
+        assert!(out.contains("preflight --snapshot"));
+    }
+
+    #[test]
+    fn governor_default_output_includes_reason_next_action_evidence() {
+        let report = sample_governor_report();
+        let out = format_governor_report(&report);
+        assert!(out.contains("reason:      no baseline and clean tree"));
+        assert!(out.contains("next action: take a snapshot now"));
+        assert!(out.contains("evidence used:"));
+        assert!(out.contains("- git repository status: available"));
+    }
+
+    #[test]
+    fn governor_one_line_outputs_exactly_one_line() {
+        let report = sample_governor_report();
+        let out = format_governor_one_line(&report);
+        assert_eq!(out.lines().count(), 1, "must be exactly one line");
+        assert!(!out.ends_with('\n'), "no trailing newline in the string itself");
+    }
+
+    #[test]
+    fn governor_one_line_uses_tab_separator() {
+        let report = sample_governor_report();
+        let out = format_governor_one_line(&report);
+        // DECISION<TAB>SUGGESTED_PROMPT
+        assert!(out.starts_with("SNAPSHOT_NOW\t"), "must start with decision + tab: {}", out);
+        assert_eq!(out.matches('\t').count(), 1, "must have exactly one tab: {}", out);
+        // The part after the tab is the suggested prompt.
+        let prompt_part = out.split('\t').nth(1).unwrap();
+        assert!(prompt_part.contains("preflight --snapshot"));
+    }
+
+    #[test]
+    fn governor_one_line_unknown_decision_still_prints() {
+        let report = LoopGovernorReport {
+            decision: LoopDecision::Unknown,
+            reason: "unclassifiable".to_string(),
+            next_action: "inspect manually".to_string(),
+            suggested_prompt: unknown_prompt().to_string(),
+            evidence_used: vec![],
+        };
+        let out = format_governor_one_line(&report);
+        assert!(out.starts_with("UNKNOWN\t"), "UNKNOWN must still print with tab: {}", out);
+        assert_eq!(out.lines().count(), 1);
+    }
+
+    #[test]
+    fn governor_one_line_collapses_multiline_prompt() {
+        // next_action may be multi-line; the one-line prompt must not embed
+        // raw newlines (they would break the single-line contract).
+        let report = LoopGovernorReport {
+            decision: LoopDecision::CommitCheckpoint,
+            reason: "dirty tree".to_string(),
+            next_action: "line one\nline two".to_string(),
+            suggested_prompt: "prompt one\nprompt two".to_string(),
+            evidence_used: vec![],
+        };
+        let out = format_governor_one_line(&report);
+        assert_eq!(out.lines().count(), 1, "one-line output must not contain newlines");
+        assert!(!out.contains('\n'));
+    }
+
+    #[test]
+    fn governor_json_is_valid_json_shaped_output() {
+        let report = sample_governor_report();
+        let out = format_governor_json(&report);
+        // Starts with `{` and ends with `}` — a single JSON object.
+        assert!(out.starts_with('{'));
+        assert!(out.ends_with('}'));
+        assert_eq!(out.matches('{').count(), out.matches('}').count());
+        // No raw newlines inside the JSON string.
+        // (one_line collapses multi-line fields before escaping.)
+        assert!(!out.contains('\n'));
+        assert!(!out.contains('\r'));
+    }
+
+    #[test]
+    fn governor_json_includes_decision() {
+        let report = sample_governor_report();
+        let out = format_governor_json(&report);
+        assert!(out.contains("\"decision\":\"SNAPSHOT_NOW\""));
+    }
+
+    #[test]
+    fn governor_json_includes_suggested_prompt() {
+        let report = sample_governor_report();
+        let out = format_governor_json(&report);
+        assert!(out.contains("\"suggested_prompt\":\""));
+        assert!(out.contains("preflight --snapshot"));
+    }
+
+    #[test]
+    fn governor_json_includes_all_required_fields() {
+        let report = sample_governor_report();
+        let out = format_governor_json(&report);
+        assert!(out.contains("\"decision\":"));
+        assert!(out.contains("\"reason\":"));
+        assert!(out.contains("\"next_action\":"));
+        assert!(out.contains("\"suggested_prompt\":"));
+        assert!(out.contains("\"evidence_used\":["));
+    }
+
+    #[test]
+    fn governor_json_escapes_quotes_and_newlines() {
+        let report = LoopGovernorReport {
+            decision: LoopDecision::CommitCheckpoint,
+            reason: "has \"quotes\" and newline\nhere".to_string(),
+            next_action: "a".to_string(),
+            suggested_prompt: "p".to_string(),
+            evidence_used: vec!["e1".to_string()],
+        };
+        let out = format_governor_json(&report);
+        // The reason's quotes must be escaped, and the newline collapsed
+        // (one_line joins with space) then the space is literal — no raw
+        // newline or unescaped quote inside the JSON value.
+        assert!(out.contains("\\\"quotes\\\""), "quotes must be escaped: {}", out);
+        assert!(!out.contains("\nhere"), "no raw newline in JSON: {}", out);
+    }
+
+    #[test]
+    fn governor_json_evidence_used_is_array() {
+        let report = sample_governor_report();
+        let out = format_governor_json(&report);
+        // evidence_used has two entries.
+        assert!(out.contains("\"evidence_used\":[\"git repository status: available\",\"working tree clean: yes\"]"));
+    }
+
+    #[test]
+    fn governor_json_empty_evidence_used_is_empty_array() {
+        let report = LoopGovernorReport {
+            decision: LoopDecision::Unknown,
+            reason: "r".to_string(),
+            next_action: "a".to_string(),
+            suggested_prompt: "p".to_string(),
+            evidence_used: vec![],
+        };
+        let out = format_governor_json(&report);
+        assert!(out.contains("\"evidence_used\":[]"));
+    }
+
+    // ---- v0.16.0 governor command does not write NEXT_RUN.md ------------
+
+    #[test]
+    fn governor_command_path_does_not_write_next_run() {
+        // The `akar governor` command path is: decide() + a formatter +
+        // println!. It must NOT write .akar/NEXT_RUN.md (only `akar request`
+        // does that). Simulate the command path here and assert no file is
+        // created.
+        let dir = fresh_akar_dir("gov_no_write");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        let _ = format_governor_report(&report);
+        let _ = format_governor_one_line(&report);
+        let _ = format_governor_json(&report);
+        let next_run = dir.join("NEXT_RUN.md");
+        assert!(
+            !next_run.exists(),
+            "governor command path must not write NEXT_RUN.md"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn request_path_still_writes_next_run() {
+        // The `akar request` path uses write_governor_next_run, which DOES
+        // write .akar/NEXT_RUN.md. Confirm it still does.
+        let dir = fresh_akar_dir("gov_request_writes");
+        let cfg = cfg_with_akar_dir(dir.clone());
+        let report = decide(&cfg);
+        let path = write_governor_next_run(&cfg, &report);
+        assert!(path.is_some(), "request path must write NEXT_RUN.md");
+        let next_run = dir.join("NEXT_RUN.md");
+        assert!(next_run.exists());
+        let content = fs::read_to_string(&next_run).unwrap();
+        assert!(content.contains("## Loop Governor Decision"));
+        assert!(content.contains("## Suggested Next Claude Prompt"));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn status_still_includes_loop_governor_section() {
+        // `akar status` still prints the loop governor section via
+        // format_loop_governor. Confirm that formatter is unchanged and
+        // produces the section header.
+        let report = sample_governor_report();
+        let out = format_loop_governor(&report);
+        assert!(out.contains("loop governor:"));
+        assert!(out.contains("decision:    SNAPSHOT_NOW"));
+        assert!(out.contains("evidence used:"));
     }
 }
