@@ -577,15 +577,27 @@ fn check_git(cfg: &crate::config::Config) -> Vec<Check> {
         }
     }
 
-    // Project kind detected from marker files
+    // Project kind detected from marker files via the shared detector.
     let kind = crate::project_detection::detect_project_kind(&cfg.project_root);
-    if kind == crate::project_detection::ProjectKind::Rust {
-        out.push(Check::pass("cargo project", "Cargo.toml found"));
-    } else {
-        out.push(Check::warn(
-            "cargo project",
-            &format!("no Cargo.toml — project kind is {:?}; 'akar verify' supports automated verify only for Rust", kind.label()),
-        ));
+    match kind {
+        crate::project_detection::ProjectKind::Rust => {
+            out.push(Check::pass(
+                "project kind",
+                &format!("{} (Cargo.toml) — 'akar verify' runs cargo build + cargo test", kind.label()),
+            ));
+        }
+        crate::project_detection::ProjectKind::Node | crate::project_detection::ProjectKind::Python => {
+            out.push(Check::pass(
+                "project kind",
+                &format!("{} — NEXT_RUN uses project-appropriate commands; 'akar verify' automated execution is Rust/Cargo-only", kind.label()),
+            ));
+        }
+        crate::project_detection::ProjectKind::Unknown => {
+            out.push(Check::warn(
+                "project kind",
+                "Unknown — no Rust, Node, or Python markers found; NEXT_RUN will use documented-verification guidance",
+            ));
+        }
     }
 
     out
@@ -1008,6 +1020,129 @@ mod tests {
         assert!(validate_json_object("{unbalanced").is_err());
         assert!(validate_json_object(r#"{"k":"unterminated}"#).is_err());
         assert!(validate_json_object("}").is_err());
+    }
+
+    // ---- project-kind doctor checks -----------------------------------------
+
+    /// Build a temp dir with the given files and a valid .akar/ so the doctor
+    /// produces the project-kind check without noise from missing-bootstrap.
+    fn cfg_with_markers(label: &str, files: &[&str]) -> crate::config::Config {
+        let dir = std::env::temp_dir().join(format!(
+            "akar_doctor_pk_{}_{}",
+            label,
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".akar")).unwrap();
+        for f in files {
+            std::fs::write(dir.join(f), "").unwrap();
+        }
+        crate::config::Config {
+            project_root: dir.clone(),
+            akar_dir: dir.join(".akar"),
+            global_dir: dir.join("global"),
+            project_name: format!("doctor-pk-{}", label),
+        }
+    }
+
+    fn find_git_check<'a>(report: &'a DoctorReport, label: &str) -> Option<&'a Check> {
+        report.git.iter().find(|c| c.label == label)
+    }
+
+    #[test]
+    fn project_kind_rust_is_pass_and_labeled_project_kind() {
+        let cfg = cfg_with_markers("rust", &["Cargo.toml"]);
+        let report = run_doctor_report(&cfg);
+        let pk = find_git_check(&report, "project kind").unwrap();
+        assert_eq!(pk.outcome, CheckOutcome::Pass);
+        assert!(pk.detail.contains("Cargo.toml"));
+        std::fs::remove_dir_all(&cfg.project_root).ok();
+    }
+
+    #[test]
+    fn project_kind_node_is_pass_and_labeled_project_kind() {
+        let cfg = cfg_with_markers("node", &["package.json"]);
+        let report = run_doctor_report(&cfg);
+        let pk = find_git_check(&report, "project kind").unwrap();
+        assert_eq!(pk.outcome, CheckOutcome::Pass);
+        assert!(pk.detail.contains("Node"));
+        std::fs::remove_dir_all(&cfg.project_root).ok();
+    }
+
+    #[test]
+    fn project_kind_python_is_pass_and_labeled_project_kind() {
+        let cfg = cfg_with_markers("py", &["pyproject.toml"]);
+        let report = run_doctor_report(&cfg);
+        let pk = find_git_check(&report, "project kind").unwrap();
+        assert_eq!(pk.outcome, CheckOutcome::Pass);
+        assert!(pk.detail.contains("Python"));
+        std::fs::remove_dir_all(&cfg.project_root).ok();
+    }
+
+    #[test]
+    fn project_kind_unknown_is_warn_and_labeled_project_kind() {
+        let cfg = cfg_with_markers("unknown", &[]);
+        let report = run_doctor_report(&cfg);
+        let pk = find_git_check(&report, "project kind").unwrap();
+        assert_eq!(pk.outcome, CheckOutcome::Warn);
+        assert!(pk.detail.contains("Unknown"));
+        std::fs::remove_dir_all(&cfg.project_root).ok();
+    }
+
+    #[test]
+    fn node_doctor_output_does_not_contain_cargo_project() {
+        let cfg = cfg_with_markers("node_no_cargo", &["package.json"]);
+        let report = run_doctor_report(&cfg);
+        let formatted = format_doctor_report(&report);
+        assert!(!formatted.contains("cargo project"), "Node doctor output must not say 'cargo project':\n{}", formatted);
+        std::fs::remove_dir_all(&cfg.project_root).ok();
+    }
+
+    #[test]
+    fn python_doctor_output_does_not_contain_cargo_project() {
+        let cfg = cfg_with_markers("py_no_cargo", &["requirements.txt"]);
+        let report = run_doctor_report(&cfg);
+        let formatted = format_doctor_report(&report);
+        assert!(!formatted.contains("cargo project"), "Python doctor output must not say 'cargo project':\n{}", formatted);
+        std::fs::remove_dir_all(&cfg.project_root).ok();
+    }
+
+    #[test]
+    fn unknown_doctor_output_does_not_contain_cargo_project() {
+        let cfg = cfg_with_markers("unk_no_cargo", &[]);
+        let report = run_doctor_report(&cfg);
+        let formatted = format_doctor_report(&report);
+        assert!(!formatted.contains("cargo project"), "Unknown doctor output must not say 'cargo project':\n{}", formatted);
+        std::fs::remove_dir_all(&cfg.project_root).ok();
+    }
+
+    #[test]
+    fn node_doctor_output_does_not_warn_about_missing_cargo_toml() {
+        let cfg = cfg_with_markers("node_no_warn", &["package.json"]);
+        let report = run_doctor_report(&cfg);
+        let pk = find_git_check(&report, "project kind").unwrap();
+        assert_eq!(pk.outcome, CheckOutcome::Pass);
+        assert!(!pk.detail.contains("no Cargo.toml"), "Node PASS must not say 'no Cargo.toml': {}", pk.detail);
+        std::fs::remove_dir_all(&cfg.project_root).ok();
+    }
+
+    #[test]
+    fn python_doctor_output_does_not_warn_about_missing_cargo_toml() {
+        let cfg = cfg_with_markers("py_no_warn", &["setup.py"]);
+        let report = run_doctor_report(&cfg);
+        let pk = find_git_check(&report, "project kind").unwrap();
+        assert_eq!(pk.outcome, CheckOutcome::Pass);
+        assert!(!pk.detail.contains("no Cargo.toml"), "Python PASS must not say 'no Cargo.toml': {}", pk.detail);
+        std::fs::remove_dir_all(&cfg.project_root).ok();
+    }
+
+    #[test]
+    fn unknown_doctor_output_does_not_say_cargo_required() {
+        let cfg = cfg_with_markers("unk_no_cargo_req", &[]);
+        let report = run_doctor_report(&cfg);
+        let pk = find_git_check(&report, "project kind").unwrap();
+        assert!(!pk.detail.contains("Cargo.toml"), "Unknown must not say Cargo.toml: {}", pk.detail);
+        std::fs::remove_dir_all(&cfg.project_root).ok();
     }
 
     #[test]

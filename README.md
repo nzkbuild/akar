@@ -259,7 +259,7 @@ AKAR does not clean, stash, commit, reset, or revert for you.
 - **files** — `NEXT_RUN.md` present, `DIFF_BASELINE.json` present/valid, `LEARNING_PATCHES.md` summary
 - **hooks** — `templates/hooks/pre-tool-call.{sh,ps1}` are valid. Templates are discovered from the source tree, the project's `.akar/hooks/` (after `akar hooks --install`), or the embedded fallback baked into the binary — so a fresh external repo PASSes without the AKAR source tree. The doctor reports which source was used and notes that Claude Code settings wiring is always manual.
 - **telemetry** — `EVENT_LOG.jsonl` and `HOOK_EVENTS.jsonl` parseable (structural JSON check)
-- **git** — repository detected, working-tree clean/dirty, `Cargo.toml` present
+- **git** — repository detected, working-tree clean/dirty, project kind (Rust/Node/Python/Unknown) detected from marker files. Rust, Node, and Python are PASS; Unknown is WARN. The doctor no longer reports a Cargo-only check.
 - **next-run** — `NEXT_RUN.md` passes the request validator if present
 - **recommendations** — advisory list of what to do
 

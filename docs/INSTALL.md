@@ -185,6 +185,8 @@ AKAR detects common project types from marker files (Cargo.toml, package.json, p
 
 `akar verify` remains limited to Rust/Cargo projects. For Node, Python, and Unknown projects, `akar verify` reports that automated verify is unsupported — it will **not** run npm or pytest automatically. Users remain responsible for confirming and running the correct project-specific test command.
 
+`akar doctor` (v0.32.0+) reports the detected project kind as "project kind" (not "cargo project"). Rust/Node/Python are PASS; Unknown is WARN. Node and Python projects no longer receive a misleading Cargo.toml-absent warning.
+
 ### Recommended dogfood command
 
 Once bootstrapped, the recommended shape for starting a session is to pass the actual task straight to `akar request` so the compiled `.akar/NEXT_RUN.md` prompt is self-describing instead of generic:
