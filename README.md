@@ -10,6 +10,20 @@ AKAR sits alongside Claude Code and adds structure to AI coding sessions — pre
 
 It does not write your code. It does not execute fixes. It does not edit project files. It prints advice and records what happened.
 
+## Stable advisory alpha
+
+AKAR is **stable advisory alpha** for the CLI advisory loop. It is not autonomous, it does not replace Claude Code, and it is not v1.0.0.
+
+Claude Code does the work. AKAR keeps the loop safe, scoped, evidenced, and recoverable:
+- Preflight snapshots establish a diff budget before you start.
+- NEXT_RUN.md compiles a project-aware guardrail prompt you hand to Claude manually.
+- Postmortem diff measurement tells you whether you stayed within budget.
+- The governor reads local evidence and suggests the next safe action — it never executes anything.
+
+AKAR does not call model APIs, does not write source code, does not push, and does not modify Claude Code settings. It lives entirely in `.akar/` and `~/.claude/akar/`.
+
+**[docs/ALPHA_USAGE.md](docs/ALPHA_USAGE.md)** — full definition: supported capabilities, known limitations, the supported workflow, guarantees, and version roadmap.
+
 ---
 
 ## What it does

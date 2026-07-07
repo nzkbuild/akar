@@ -1,11 +1,13 @@
 # AKAR Install Guide
 
+> AKAR is **stable advisory alpha**. See [docs/ALPHA_USAGE.md](ALPHA_USAGE.md) for the full definition of what's supported, what's not yet stable, and the version roadmap. This guide covers the supported installation and usage path.
+
 ## A. Installation
 
 ### Requirements
 
 - Rust 1.70+ and Cargo
-- Windows 10/11 (primary target); macOS and Linux supported
+- Windows 10/11 (primary target); macOS and Linux supported (not independently dogfooded)
 - No other runtime dependencies — AKAR is a single self-contained binary
 
 ### Build from source
@@ -196,6 +198,13 @@ akar request "fix one small failing test"
 ```
 
 Hand the resulting `.akar/NEXT_RUN.md` to Claude as-is. Run `akar request --check` afterward if you want to validate the prompt before handing it off.
+
+## Stable advisory alpha notes
+
+- AKAR is stable advisory alpha for the CLI loop. See [docs/ALPHA_USAGE.md](ALPHA_USAGE.md) for the full definition.
+- **Hooks require manual Claude settings wiring.** AKAR provides templates via `akar hooks --install` and verification via `akar hooks --check`, but it never edits `~/.claude/settings.json`. Run `akar hooks` and follow the manual registration instructions.
+- **`.akar/` may need intentional gitignore or commit handling.** AKAR reports when its own output dirties the tree and prints an advisory, but it never decides for you.
+- **Node/Python verification guidance is advisory and user-run.** `akar verify` automated execution is Rust/Cargo only. For non-Rust projects, the generated NEXT_RUN includes the project-appropriate test command (`npm test`, `python -m pytest`) as an allowed command and stop condition, but you must run it yourself.
 
 ---
 
