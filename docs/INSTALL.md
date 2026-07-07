@@ -181,7 +181,9 @@ If you skip the `git status` check and `.akar/` is left untracked, `akar preflig
 
 Hook events are now written to the **target project's** `.akar/HOOK_EVENTS.jsonl` (the hook reads `"cwd"` from the Claude Code stdin JSON, falling back to the process cwd), so they stay where you'd expect them even when the Claude Code session's working directory differs from the repo being dogfooded.
 
-AKAR detects common project types from marker files (Cargo.toml, package.json, pyproject.toml) and generates project-appropriate verification guidance in `.akar/NEXT_RUN.md`. Rust projects get Cargo commands; Node projects get `npm test`; Python projects get `python -m pytest`; unknown projects get documented-verification guidance. Users remain responsible for confirming the correct project-specific test command — AKAR does not run these commands automatically.
+AKAR detects common project types from marker files (Cargo.toml, package.json, pyproject.toml/setup.py/requirements.txt) and generates project-appropriate verification guidance in `.akar/NEXT_RUN.md`. Rust projects get Cargo commands; Node projects get `npm test`; Python projects get `python -m pytest`; unknown projects get documented-verification guidance.
+
+`akar verify` remains limited to Rust/Cargo projects. For Node, Python, and Unknown projects, `akar verify` reports that automated verify is unsupported — it will **not** run npm or pytest automatically. Users remain responsible for confirming and running the correct project-specific test command.
 
 ### Recommended dogfood command
 

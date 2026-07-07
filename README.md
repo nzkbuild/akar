@@ -306,16 +306,15 @@ The PreToolUse hook writes safety events to the **target project's** `.akar/HOOK
 
 ### Project-aware verification (v0.30.0+)
 
-NEXT_RUN compiled prompts include project-appropriate verification commands instead of a static Cargo list. AKAR detects the project kind from marker files (Cargo.toml, package.json, pyproject.toml/setup.py/requirements.txt) and generates Allowed Commands, Stop Conditions, and Verification Required sections accordingly:
+AKAR has one shared project detector (`src/project_detection.rs`) that determines the project kind from marker files (Cargo.toml, package.json, pyproject.toml/setup.py/requirements.txt). The detection hierarchy is: Rust > Node > Python > Unknown.
 
-| Project kind | Build command | Test command | AKAR prefix |
-|---|---|---|---|
-| Rust | `cargo build --release` | `cargo test` | `cargo run --` |
-| Node | (none) | `npm test` | `akar` |
-| Python | (none) | `python -m pytest` | `akar` |
-| Unknown | (none) | (documented-verification guidance) | `akar` |
+This detector powers NEXT_RUN prompt compilation — Allowed Commands, Stop Conditions, and Verification Required sections are project-adapted. But `akar verify` is **not** a universal test runner:
 
-Rust is the highest detection priority, so a repo with both Cargo.toml and package.json is treated as Rust. AKAR does not run these commands automatically — users remain responsible for confirming the correct project-specific test command.
+- **Rust** projects get `cargo build --release` / `cargo test` in NEXT_RUN, and `akar verify` runs cargo commands.
+- **Node** and **Python** projects get `npm test` / `python -m pytest` in NEXT_RUN guidance, but `akar verify` does **not** run npm or pytest — it reports that automated verify is unsupported for these project kinds.
+- **Unknown** projects get documented-verification guidance in NEXT_RUN.
+
+AKAR does not run project-specific commands automatically. Users remain responsible for confirming the correct test command for their project.
 
 ---
 

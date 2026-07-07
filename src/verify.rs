@@ -86,14 +86,14 @@ pub struct VerifyResult {
 
 /// Inspect `project_root` and build an appropriate `VerifyRecipe`.
 ///
-/// Detection order:
-/// 1. `Cargo.toml` → Rust / cargo project
-/// 2. `package.json` → Node / npm project
-/// 3. Neither → manual-only recipe
+/// Uses the shared `ProjectKind` detector. Only Rust projects get automated
+/// commands (`cargo build`, `cargo test`). Non-Rust projects receive a
+/// manual-only recipe — `akar verify` does NOT run `npm test` or `pytest`.
 pub fn detect_recipe(project_root: &Path) -> VerifyRecipe {
+    let kind = crate::project_detection::detect_project_kind(project_root);
     let mut commands = Vec::new();
 
-    if project_root.join("Cargo.toml").exists() {
+    if kind == crate::project_detection::ProjectKind::Rust {
         commands.push(VerifyCommand {
             name: "cargo build".to_string(),
             command: "cargo".to_string(),
@@ -105,19 +105,6 @@ pub fn detect_recipe(project_root: &Path) -> VerifyRecipe {
             command: "cargo".to_string(),
             args: vec!["test".to_string()],
             required: true,
-        });
-    } else if project_root.join("package.json").exists() {
-        commands.push(VerifyCommand {
-            name: "npm run build".to_string(),
-            command: "npm".to_string(),
-            args: vec!["run".to_string(), "build".to_string()],
-            required: false,
-        });
-        commands.push(VerifyCommand {
-            name: "npm test".to_string(),
-            command: "npm".to_string(),
-            args: vec!["test".to_string()],
-            required: false,
         });
     }
 
@@ -140,7 +127,7 @@ pub fn detect_recipe(project_root: &Path) -> VerifyRecipe {
     if recipe.commands.is_empty() {
         recipe
             .manual_checks
-            .insert(0, "no build system detected".to_string());
+            .insert(0, format!("no automated verify for {} projects — use the project-specific test command", kind.label()));
     }
 
     recipe
@@ -246,7 +233,8 @@ pub fn run_recipe(recipe: &VerifyRecipe, project_root: &Path) -> Vec<VerifyResul
 // Output formatting
 // ---------------------------------------------------------------------------
 
-/// Format `results` plus the recipe's `not_verified` list in the AKAR done-format.
+/// Format `results` plus the recipe's `manual_checks` and `not_verified` lists
+/// in the AKAR done-format.
 pub fn format_results(results: &[VerifyResult], recipe: &VerifyRecipe) -> String {
     let mut out = String::new();
 
@@ -265,6 +253,13 @@ pub fn format_results(results: &[VerifyResult], recipe: &VerifyRecipe) -> String
                     .unwrap_or_else(|| "Unknown".to_string());
                 out.push_str(&format!("  - {}: FAIL ({})\n", r.command, class));
             }
+        }
+    }
+
+    if !recipe.manual_checks.is_empty() {
+        out.push_str("Manual checks:\n");
+        for item in &recipe.manual_checks {
+            out.push_str(&format!("  - {}\n", item));
         }
     }
 

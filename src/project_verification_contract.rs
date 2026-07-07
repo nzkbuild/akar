@@ -1,59 +1,20 @@
-//! Project-aware verification contract (v0.30.0).
+//! Project-aware verification contract (v0.30.0 → v0.31.0).
 //!
-//! Single source of truth for project verification commands. Detects the
-//! project kind from marker files and returns the appropriate build, test,
-//! and verification commands for NEXT_RUN prompt compilation.
+//! Build, test, verification, and NEXT_RUN data keyed by ProjectKind.
 //!
-//! Does not run anything. Does not parse dependency files. Does not access
-//! the network. Marker-file presence is the only detection signal.
+//! Detection is delegated to the shared `project_detection` module — this
+//! module contains no marker-file logic of its own.
 
 use std::path::Path;
 
-// ---------------------------------------------------------------------------
-// ProjectKind
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProjectKind {
-    Rust,
-    Node,
-    Python,
-    Unknown,
-}
-
-impl ProjectKind {
-    pub fn label(&self) -> &'static str {
-        match self {
-            ProjectKind::Rust => "Rust",
-            ProjectKind::Node => "Node",
-            ProjectKind::Python => "Python",
-            ProjectKind::Unknown => "Unknown",
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Detection
-// ---------------------------------------------------------------------------
+// Re-export for callers that import through this module.
+pub use crate::project_detection::ProjectKind;
 
 /// Detect the project kind from marker files in `project_root`.
 ///
-/// Priority: Rust > Node > Python > Unknown.
-/// Only checks for file existence — no file parsing, no network access.
+/// Delegates to the shared `project_detection` module.
 pub fn detect_project_kind(project_root: &Path) -> ProjectKind {
-    if project_root.join("Cargo.toml").exists() {
-        return ProjectKind::Rust;
-    }
-    if project_root.join("package.json").exists() {
-        return ProjectKind::Node;
-    }
-    if project_root.join("pyproject.toml").exists()
-        || project_root.join("setup.py").exists()
-        || project_root.join("requirements.txt").exists()
-    {
-        return ProjectKind::Python;
-    }
-    ProjectKind::Unknown
+    crate::project_detection::detect_project_kind(project_root)
 }
 
 // ---------------------------------------------------------------------------
@@ -158,86 +119,6 @@ pub fn unknown_verification_guidance() -> Vec<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-
-    fn temp_project(label: &str, files: &[&str]) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "akar_pvc_{}_{}",
-            label,
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        for f in files {
-            fs::write(dir.join(f), "").unwrap();
-        }
-        dir
-    }
-
-    // ---- detection ---------------------------------------------------------
-
-    #[test]
-    fn detect_rust_from_cargo_toml() {
-        let dir = temp_project("rust", &["Cargo.toml"]);
-        assert_eq!(detect_project_kind(&dir), ProjectKind::Rust);
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn detect_node_from_package_json() {
-        let dir = temp_project("node", &["package.json"]);
-        assert_eq!(detect_project_kind(&dir), ProjectKind::Node);
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn detect_python_from_pyproject_toml() {
-        let dir = temp_project("py", &["pyproject.toml"]);
-        assert_eq!(detect_project_kind(&dir), ProjectKind::Python);
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn detect_python_from_setup_py() {
-        let dir = temp_project("py_setup", &["setup.py"]);
-        assert_eq!(detect_project_kind(&dir), ProjectKind::Python);
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn detect_python_from_requirements_txt() {
-        let dir = temp_project("py_req", &["requirements.txt"]);
-        assert_eq!(detect_project_kind(&dir), ProjectKind::Python);
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn detect_unknown_from_empty_dir() {
-        let dir = temp_project("empty", &[]);
-        assert_eq!(detect_project_kind(&dir), ProjectKind::Unknown);
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn rust_priority_over_node() {
-        let dir = temp_project("rust_node", &["Cargo.toml", "package.json"]);
-        assert_eq!(detect_project_kind(&dir), ProjectKind::Rust);
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn rust_priority_over_python() {
-        let dir = temp_project("rust_py", &["Cargo.toml", "pyproject.toml"]);
-        assert_eq!(detect_project_kind(&dir), ProjectKind::Rust);
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn node_priority_over_python() {
-        let dir = temp_project("node_py", &["package.json", "setup.py"]);
-        assert_eq!(detect_project_kind(&dir), ProjectKind::Node);
-        fs::remove_dir_all(&dir).ok();
-    }
 
     // ---- build commands ----------------------------------------------------
 

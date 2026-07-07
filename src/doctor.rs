@@ -577,13 +577,14 @@ fn check_git(cfg: &crate::config::Config) -> Vec<Check> {
         }
     }
 
-    // Cargo project detected if Cargo.toml exists
-    if cfg.project_root.join("Cargo.toml").exists() {
+    // Project kind detected from marker files
+    let kind = crate::project_detection::detect_project_kind(&cfg.project_root);
+    if kind == crate::project_detection::ProjectKind::Rust {
         out.push(Check::pass("cargo project", "Cargo.toml found"));
     } else {
         out.push(Check::warn(
             "cargo project",
-            "no Cargo.toml — 'akar verify' will fall back to npm or report no recipe",
+            &format!("no Cargo.toml — project kind is {:?}; 'akar verify' supports automated verify only for Rust", kind.label()),
         ));
     }
 

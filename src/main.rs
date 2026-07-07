@@ -17,6 +17,7 @@ mod mission;
 mod model_profile;
 mod postmortem;
 mod preflight;
+mod project_detection;
 mod project_verification_contract;
 mod request_intelligence;
 mod safe_fix;
@@ -908,7 +909,7 @@ fn parse_flag_str(args: &[String], flag: &str) -> Option<String> {
 /// AKAR will NOT auto-ignore, auto-delete, or auto-commit `Cargo.lock`. The
 /// snapshot still refuses a dirty tree regardless.
 fn cargo_lock_dirty_advisory(project_root: &std::path::Path) -> Option<String> {
-    if !project_root.join("Cargo.toml").exists() {
+    if crate::project_detection::detect_project_kind(project_root) != crate::project_detection::ProjectKind::Rust {
         return None;
     }
     let out = std::process::Command::new("git")
