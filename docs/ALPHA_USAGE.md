@@ -146,6 +146,7 @@ These guarantees hold for stable advisory alpha and will not be silently removed
 - **`request --check` validates NEXT_RUN structure.** The validator checks section count, minimum content, safety contract presence, and governor decision consistency.
 - **Postmortem measures diff budget against baseline.** The diff measurement (`git diff --stat` against the baseline HEAD) is reliable and honest.
 - **Doctor reports project kind honestly.** Rust, Node, Python are PASS; Unknown is WARN. The check is named "project kind," not "cargo project."
+- **Verification discovery hints surface likely test commands.** AKAR scans local files (package.json, pyproject.toml, Makefile, justfile, README) for likely verification commands without executing anything. Hints appear in doctor, NEXT_RUN, and verify output. Dangerous patterns are filtered.
 
 ## Known limitations
 
@@ -154,7 +155,7 @@ These limitations are acknowledged and scoped for future releases:
 - **Live Claude Code hook telemetry was not tested in v0.33.** The third external dogfood trial was CLI-only. Hook behavior in a live Claude Code session with wired PreToolUse needs a dedicated dogfood trial (targeted for v0.35.0).
 - **Hooks require manual Claude settings wiring.** AKAR provides templates and instructions but never automates the registration step. This is a design choice, not a bug — but it means the hook pipeline is not "one command to activate."
 - **Hook behavior depends on user PATH and session setup.** The PreToolUse hook calls `akar safety` via the user's PATH. If `akar` is not on PATH in the hook's execution environment, the hook will fail.
-- **Python and Unknown projects need full dogfood trials.** Node (v0.33) and Rust (v0.24) have been dogfooded. Python and Unknown fixtures need the same end-to-end proof (targeted for v0.36.0).
+- **Python and Unknown projects need full dogfood trials.** Node (v0.33) and Rust (v0.24) have been dogfooded. Python was dogfooded in v0.37.0. Unknown projects with discovery hints have not yet received a full dogfood trial.
 - **Cross-platform behavior needs broader validation.** Primary development and dogfooding is on Windows. macOS and Linux have not been independently dogfooded.
 - **Multi-task sessions need dogfood.** All dogfood trials have been single-task (one baseline, one fix, one postmortem). A session with multiple sequential tasks (preflight → fix → postmortem → preflight → fix → postmortem) needs proof (targeted for v0.37.0).
 - **`akar verify` automated execution is Rust/Cargo only.** For Node, Python, and Unknown projects, `akar verify` reports "(no automated checks)" and directs the user to manual verification. This is by design — AKAR does not run `npm test` or `pytest`.
@@ -169,7 +170,8 @@ These limitations are acknowledged and scoped for future releases:
 | v0.34.0 | Stable advisory alpha freeze (this release) |
 | v0.35.0 | Live Hook Dogfood Trial |
 | v0.36.0 | Python External Dogfood Trial |
-| v0.37.0 | Multi-task Session Dogfood Trial |
+| v0.38.0 | Verification Discovery Hints |
+| v0.39.0 | Unknown-Project Discovery Dogfood |
 | v1.0.0 | Release Candidate review |
 
 Multi-agent support, token optimization, OpenCode/Codex adapters, and background services are deferred to post-v1.0.0 design work. The priority is proving the single-agent advisory loop is solid before adding scope.

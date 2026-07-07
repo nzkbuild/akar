@@ -1,6 +1,8 @@
-//! Project-aware verification contract (v0.30.0 → v0.31.0).
+//! Project-aware verification contract (v0.30.0 → v0.31.0 → v0.38.0).
 //!
 //! Build, test, verification, and NEXT_RUN data keyed by ProjectKind.
+//! Discovery of extra verification hints is delegated to
+//! `verification_discovery` for Unknown and known project kinds.
 //!
 //! Detection is delegated to the shared `project_detection` module — this
 //! module contains no marker-file logic of its own.
@@ -16,6 +18,14 @@ pub use crate::project_detection::ProjectKind;
 pub fn detect_project_kind(project_root: &Path) -> ProjectKind {
     crate::project_detection::detect_project_kind(project_root)
 }
+
+// ---------------------------------------------------------------------------
+// Discovery hints
+// ---------------------------------------------------------------------------
+
+pub use crate::verification_discovery::{
+    discover_verification_hints, VerificationConfidence,
+};
 
 // ---------------------------------------------------------------------------
 // Build commands
@@ -72,6 +82,9 @@ pub fn akar_cli_commands(kind: ProjectKind) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 /// Additional allowed commands specific to the project kind.
+///
+/// For known project kinds includes the built-in commands.  For Unknown
+/// projects includes high-confidence discovered hints (requires_confirmation=false).
 pub fn project_allowed_commands(kind: ProjectKind) -> Vec<String> {
     let mut cmds: Vec<String> = Vec::new();
     for c in build_commands(kind) {
@@ -79,6 +92,34 @@ pub fn project_allowed_commands(kind: ProjectKind) -> Vec<String> {
     }
     for c in test_commands(kind) {
         cmds.push(c.to_string());
+    }
+    cmds
+}
+
+/// Discovered verification hints that can be added as additional allowed
+/// commands (high-confidence only, from local project files).
+///
+/// This does NOT run any discovered command — it only returns hints that
+/// were found by reading safe local files.
+#[allow(dead_code)]
+pub fn discovered_allowed_commands(root: &Path, kind: ProjectKind) -> Vec<String> {
+    let discovery = crate::verification_discovery::discover_verification_hints(root);
+    let mut cmds: Vec<String> = Vec::new();
+    for hint in &discovery.hints {
+        // Only high-confidence hints with no confirmation requirement
+        // are added as allowed commands for known project kinds. For
+        // Unknown projects, even high-confidence hints require the user
+        // to confirm before running.
+        if hint.confidence == crate::verification_discovery::VerificationConfidence::High
+            && !hint.requires_confirmation
+        {
+            // For known project kinds, the built-in commands already cover
+            // these — skip duplicates.
+            let built_in = project_allowed_commands(kind);
+            if !built_in.contains(&hint.command) {
+                cmds.push(hint.command.clone());
+            }
+        }
     }
     cmds
 }

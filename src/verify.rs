@@ -125,9 +125,21 @@ pub fn detect_recipe(project_root: &Path) -> VerifyRecipe {
     };
 
     if recipe.commands.is_empty() {
-        recipe
-            .manual_checks
-            .insert(0, format!("no automated verify for {} projects — use the project-specific test command", kind.label()));
+        // Include discovery hints in the manual-checks message for non-Rust projects.
+        let discovery = crate::verification_discovery::discover_verification_hints(project_root);
+        if !discovery.is_empty() {
+            recipe
+                .manual_checks
+                .insert(0, format!(
+                    "no automated verify for {} projects — discovered verification hint(s): {}",
+                    kind.label(),
+                    discovery.summary
+                ));
+        } else {
+            recipe
+                .manual_checks
+                .insert(0, format!("no automated verify for {} projects — use the project-specific test command", kind.label()));
+        }
     }
 
     recipe

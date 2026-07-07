@@ -185,6 +185,8 @@ Hook events are now written to the **target project's** `.akar/HOOK_EVENTS.jsonl
 
 AKAR detects common project types from marker files (Cargo.toml, package.json, pyproject.toml/setup.py/requirements.txt) and generates project-appropriate verification guidance in `.akar/NEXT_RUN.md`. Rust projects get Cargo commands; Node projects get `npm test`; Python projects get `python -m pytest`; unknown projects get documented-verification guidance.
 
+For projects without clear marker files, AKAR scans local files for likely verification commands (v0.38.0+): `package.json` scripts.test, `pyproject.toml`/`tests/`, `Makefile` test: target, `justfile` test: recipe, and README.md command literals. Hints appear in `akar doctor`, NEXT_RUN prompts, and `akar verify`. Dangerous commands are never surfaced. Discovered commands are advisory only — AKAR never runs them.
+
 `akar verify` remains limited to Rust/Cargo projects. For Node, Python, and Unknown projects, `akar verify` reports that automated verify is unsupported — it will **not** run npm or pytest automatically. Users remain responsible for confirming and running the correct project-specific test command.
 
 `akar doctor` (v0.32.0+) reports the detected project kind as "project kind" (not "cargo project"). Rust/Node/Python are PASS; Unknown is WARN. Node and Python projects no longer receive a misleading Cargo.toml-absent warning.

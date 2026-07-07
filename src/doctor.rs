@@ -152,6 +152,7 @@ pub struct DoctorReport {
     pub telemetry: Vec<Check>,
     pub git: Vec<Check>,
     pub next_run: Vec<Check>,
+    pub verification_hints: Vec<Check>,
     pub recommendations: Vec<String>,
 }
 
@@ -187,6 +188,7 @@ impl DoctorReport {
         v.extend(self.telemetry.iter());
         v.extend(self.git.iter());
         v.extend(self.next_run.iter());
+        v.extend(self.verification_hints.iter());
         v
     }
 
@@ -211,6 +213,7 @@ pub fn run_doctor_report(cfg: &crate::config::Config) -> DoctorReport {
     let telemetry = check_telemetry(cfg);
     let git = check_git(cfg);
     let next_run = check_next_run(cfg);
+    let verification_hints = check_verification_hints(cfg);
 
     let mut report = DoctorReport {
         status: DoctorStatus::Ok,
@@ -220,6 +223,7 @@ pub fn run_doctor_report(cfg: &crate::config::Config) -> DoctorReport {
         telemetry,
         git,
         next_run,
+        verification_hints,
         recommendations: Vec::new(),
     };
 
@@ -642,6 +646,34 @@ fn check_next_run(cfg: &crate::config::Config) -> Vec<Check> {
     out
 }
 
+/// Verification discovery hints: check whether local project files reveal
+/// safe verification commands for non-technical users.
+fn check_verification_hints(cfg: &crate::config::Config) -> Vec<Check> {
+    let mut out = Vec::new();
+    let kind = crate::project_detection::detect_project_kind(&cfg.project_root);
+    let discovery = crate::verification_discovery::discover_verification_hints(&cfg.project_root);
+
+    if discovery.is_empty() {
+        if kind == crate::project_detection::ProjectKind::Unknown {
+            out.push(Check::warn(
+                "verification hints",
+                "no confident verification command discovered; use README or project docs",
+            ));
+        } else {
+            // Known project kinds have built-in commands — empty discovery is fine.
+            out.push(Check::pass(
+                "verification hints",
+                "no additional hints beyond built-in project-kind commands",
+            ));
+        }
+    } else {
+        let summary = &discovery.summary;
+        out.push(Check::pass("verification hints", summary));
+    }
+
+    out
+}
+
 /// Build advisory recommendations from the report. Read-only intent.
 fn build_recommendations(report: &DoctorReport) -> Vec<String> {
     let mut recs = Vec::new();
@@ -694,6 +726,10 @@ pub fn format_doctor_report(report: &DoctorReport) -> String {
 
     out.push_str("next-run:\n");
     out.push_str(&format_checks(&report.next_run));
+    out.push('\n');
+
+    out.push_str("verification hints:\n");
+    out.push_str(&format_checks(&report.verification_hints));
     out.push('\n');
 
     out.push_str("recommendations:\n");

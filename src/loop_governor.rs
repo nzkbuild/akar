@@ -895,6 +895,16 @@ pub fn compile_next_run_prompt(
     for cmd in allowed_commands(kind, &report.decision) {
         out.push_str(&format!("- `{}`\n", cmd));
     }
+    // High-confidence discovery hints for known project kinds.
+    let discovery = pvc::discover_verification_hints(&cfg.project_root);
+    for hint in &discovery.hints {
+        if hint.confidence == pvc::VerificationConfidence::High
+            && !hint.requires_confirmation
+            && !allowed_commands(kind, &report.decision).contains(&hint.command)
+        {
+            out.push_str(&format!("- `{}`  *(discovered from {})*\n", hint.command, hint.source));
+        }
+    }
     out.push('\n');
 
     // 8. Forbidden Commands
@@ -916,7 +926,35 @@ pub fn compile_next_run_prompt(
     for cmd in verification_commands(kind, &report.decision) {
         out.push_str(&format!("- `{}`\n", cmd));
     }
-    // Unknown projects get human-readable guidance.
+    // Discovery hints: for Unknown projects, include confidence-ranked hints.
+    // For known projects, include medium/low hints that weren't already in
+    // allowed commands.
+    for hint in &discovery.hints {
+        let already_in_verification = verification_commands(kind, &report.decision)
+            .contains(&hint.command);
+        if kind == pvc::ProjectKind::Unknown {
+            // For Unknown projects, show all discovered hints with confidence.
+            if hint.confidence == pvc::VerificationConfidence::High && !hint.requires_confirmation {
+                out.push_str(&format!("- `{}`  *(High, {})*\n", hint.command, hint.source));
+            } else {
+                out.push_str(&format!(
+                    "- Ask the user before running discovered verification command: `{}`  *({}, {})*\n",
+                    hint.command,
+                    hint.confidence.as_str(),
+                    hint.source
+                ));
+            }
+        } else if !already_in_verification && hint.confidence != pvc::VerificationConfidence::High {
+            // Medium/Low hints for known projects — suggest, don't require.
+            out.push_str(&format!(
+                "- Ask the user before running discovered verification command: `{}`  *({}, {})*\n",
+                hint.command,
+                hint.confidence.as_str(),
+                hint.source
+            ));
+        }
+    }
+    // Unknown projects get human-readable guidance (always).
     if kind == pvc::ProjectKind::Unknown {
         for guide in pvc::unknown_verification_guidance() {
             out.push_str(&format!("- {}\n", guide));

@@ -330,6 +330,20 @@ This detector powers NEXT_RUN prompt compilation — Allowed Commands, Stop Cond
 
 AKAR does not run project-specific commands automatically. Users remain responsible for confirming the correct test command for their project.
 
+### Verification discovery hints (v0.38.0+)
+
+For projects without obvious marker files (or to supplement known projects), AKAR scans local project files for likely verification commands without executing anything:
+
+| Source | Command | Confidence |
+|--------|---------|------------|
+| `package.json` scripts.test | `npm test` | High |
+| `pyproject.toml` / `pytest.ini` / `tests/` | `python -m pytest` | High |
+| `Makefile` test: target | `make test` | Medium |
+| `justfile` test: recipe | `just test` | Medium |
+| `README.md` whitelisted command literals | `npm test`, `pytest`, `cargo test`, etc. | Low–Medium |
+
+Hints appear in `akar doctor` (new "verification hints" section), NEXT_RUN prompts, and `akar verify` manual-check messages. Dangerous commands (curl, sudo, rm, etc.) are never surfaced. All discovered commands are **advisory only** — AKAR never runs them.
+
 ---
 
 ## Development approach

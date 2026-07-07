@@ -20,6 +20,7 @@ mod preflight;
 mod project_detection;
 mod project_verification_contract;
 mod request_intelligence;
+mod verification_discovery;
 mod safe_fix;
 mod safety;
 mod skill_registry;
