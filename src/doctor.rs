@@ -355,9 +355,9 @@ fn check_files(cfg: &crate::config::Config) -> Vec<Check> {
             &format!("{}", next_run_path.display()),
         ));
     } else {
-        out.push(Check::warn(
+        out.push(Check::pass(
             "NEXT_RUN.md present",
-            "missing — run 'akar request' to generate a Claude-ready next-run prompt",
+            "not generated yet — run 'akar request \"<task>\"' when ready",
         ));
     }
 
@@ -375,9 +375,9 @@ fn check_files(cfg: &crate::config::Config) -> Vec<Check> {
             )),
         }
     } else {
-        out.push(Check::warn(
+        out.push(Check::pass(
             "DIFF_BASELINE.json",
-            "missing — run 'akar preflight --snapshot \"<task>\"' before a measured session",
+            "no snapshot yet — run 'akar preflight --snapshot \"<task>\"' before a measured session",
         ));
     }
 
@@ -612,10 +612,10 @@ fn check_next_run(cfg: &crate::config::Config) -> Vec<Check> {
     let mut out = Vec::new();
     let path = cfg.akar_dir.join("NEXT_RUN.md");
     if !path.exists() {
-        // Missing NEXT_RUN is a WARN, not a FAIL (no baseline for dogfood stop).
-        out.push(Check::warn(
+        // Missing NEXT_RUN is expected on a fresh project — advisory, not a failure.
+        out.push(Check::pass(
             "NEXT_RUN.md valid",
-            "missing — run 'akar request' to generate it",
+            "not generated yet — run 'akar request \"<task>\"' when ready",
         ));
         return out;
     }
@@ -839,13 +839,13 @@ mod tests {
     }
 
     #[test]
-    fn missing_next_run_is_warn_not_fail() {
+    fn missing_next_run_is_pass_not_warn() {
         let (cfg, dir) = cfg_with_temp_akar("missing_nextrun");
-        // No NEXT_RUN.md present.
+        // No NEXT_RUN.md present — fresh project, expected.
         let report = run_doctor_report(&cfg);
         assert_ne!(report.status, DoctorStatus::Fail, "missing NEXT_RUN must not FAIL");
         let nr = report.next_run.iter().find(|c| c.label == "NEXT_RUN.md valid").unwrap();
-        assert_eq!(nr.outcome, CheckOutcome::Warn);
+        assert_eq!(nr.outcome, CheckOutcome::Pass, "missing NEXT_RUN on fresh project should PASS");
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -879,13 +879,12 @@ mod tests {
     }
 
     #[test]
-    fn missing_baseline_is_warn_not_fail() {
+    fn missing_baseline_is_pass_not_warn() {
         let (cfg, dir) = cfg_with_temp_akar("missing_baseline");
-        // No DIFF_BASELINE.json present.
+        // No DIFF_BASELINE.json present — fresh project, expected.
         let report = run_doctor_report(&cfg);
         let b = report.files.iter().find(|c| c.label == "DIFF_BASELINE.json").unwrap();
-        assert_eq!(b.outcome, CheckOutcome::Warn);
-        assert_ne!(report.status, DoctorStatus::Fail, "missing baseline must not FAIL");
+        assert_eq!(b.outcome, CheckOutcome::Pass, "missing baseline on fresh project should PASS");
         std::fs::remove_dir_all(&dir).ok();
     }
 

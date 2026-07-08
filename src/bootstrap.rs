@@ -74,7 +74,7 @@ pub fn run_bootstrap(cfg: &config::Config) -> BootstrapResult {
         None => {
             result
                 .warnings
-                .push("templates directory not found".to_string());
+                .push("source template directory not present in this repo; this is normal for installed AKAR. Embedded hook templates remain available via 'akar hooks --install'.".to_string());
             return result;
         }
     };
@@ -383,7 +383,7 @@ mod tests {
         let result = BootstrapResult {
             created: vec![],
             skipped: vec![],
-            warnings: vec!["templates directory not found".to_string()],
+            warnings: vec!["source template directory not present in this repo; this is normal for installed AKAR. Embedded hook templates remain available via 'akar hooks --install'.".to_string()],
             akar_dir_created: true,
             global_dir_created: false,
         };
@@ -399,8 +399,9 @@ mod tests {
             report
         );
         assert!(
-            report.contains("templates directory not found"),
-            "warnings must be shown"
+            report.contains("source template directory not present"),
+            "warnings must mention missing source templates: {}",
+            report
         );
     }
 
@@ -426,7 +427,7 @@ mod tests {
         let result = BootstrapResult {
             created: vec![],
             skipped: vec![],
-            warnings: vec!["templates directory not found".to_string()],
+            warnings: vec!["source template directory not present in this repo; this is normal for installed AKAR. Embedded hook templates remain available via 'akar hooks --install'.".to_string()],
             akar_dir_created: true,
             global_dir_created: false,
         };
@@ -434,8 +435,8 @@ mod tests {
         let report = format_bootstrap_report(&result);
         assert!(report.contains("warnings:"), "should show warnings section");
         assert!(
-            report.contains("templates directory not found"),
-            "should show warning text"
+            report.contains("source template directory not present"),
+            "should show new wording about embedded fallback"
         );
     }
 }

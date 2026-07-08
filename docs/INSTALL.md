@@ -173,7 +173,7 @@ To use AKAR in advisory mode on a repo that is not AKAR itself:
    - `akar hooks --install` — write the embedded PreToolUse hook templates to `.akar/hooks/` (works without the AKAR source tree; never edits `~/.claude/settings.json`)
    - manually wire Claude Code PreToolUse if not already wired globally (run `akar hooks` for the settings.json example)
    - `akar hooks --check` — verify templates (source-tree, project `.akar/hooks/`, or embedded)
-   - `akar doctor` — read-only dogfood-readiness check
+   - `akar doctor` — read-only dogfood-readiness check (v0.41.0+: fresh-project missing NEXT_RUN and baseline are PASS with next-step wording, not WARN)
    - `git status` — inspect what `akar init`/`akar hooks --install` just created, and decide whether `.akar/` belongs in `.gitignore` or should be committed (AKAR does not decide this for you)
    - `akar preflight --snapshot "<task>"` — once the tree is in the state you intend
 

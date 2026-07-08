@@ -157,7 +157,7 @@ These limitations are acknowledged and scoped for future releases:
 - **Hook behavior depends on user PATH and session setup.** The PreToolUse hook calls `akar safety` via the user's PATH. If `akar` is not on PATH in the hook's execution environment, the hook will fail.
 - **Python and Unknown projects need full dogfood trials.** Node (v0.33) and Rust (v0.24) have been dogfooded. Python was dogfooded in v0.37.0. Unknown projects with discovery hints have not yet received a full dogfood trial.
 - **Cross-platform behavior needs broader validation.** Primary development and dogfooding is on Windows. macOS and Linux have not been independently dogfooded.
-- **Multi-task sessions need dogfood.** All dogfood trials have been single-task (one baseline, one fix, one postmortem). A session with multiple sequential tasks (preflight → fix → postmortem → preflight → fix → postmortem) needs proof (targeted for v0.37.0).
+- **Multi-task sessions need dogfood.** All dogfood trials have been single-task (one baseline, one fix, one postmortem). A session with multiple sequential tasks (preflight → fix → postmortem → preflight → fix → postmortem) needs proof (v0.40.0 — DONE).
 - **`akar verify` automated execution is Rust/Cargo only.** For Node, Python, and Unknown projects, `akar verify` reports "(no automated checks)" and directs the user to manual verification. This is by design — AKAR does not run `npm test` or `pytest`.
 - **`akar run` and `akar mission` are advisory scaffolds, not execution engines.** They write prompts and record telemetry but do not drive Claude Code or execute tasks.
 - **Cost/token optimization is future work.** No token counting, cache warming, or cost estimation exists today.
@@ -172,6 +172,8 @@ These limitations are acknowledged and scoped for future releases:
 | v0.36.0 | Python External Dogfood Trial |
 | v0.38.0 | Verification Discovery Hints |
 | v0.39.0 | Unknown-Project Discovery Dogfood |
+| v0.40.0 | Multi-Task Session Dogfood Trial |
+| v0.41.0 | Fresh-User Wording Polish |
 | v1.0.0 | Release Candidate review |
 
 Multi-agent support, token optimization, OpenCode/Codex adapters, and background services are deferred to post-v1.0.0 design work. The priority is proving the single-agent advisory loop is solid before adding scope.

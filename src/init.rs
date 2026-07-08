@@ -155,6 +155,12 @@ pub fn format_init_report(result: &InitResult) -> String {
     }
 
     out.push('\n');
+    out.push_str(".akar/ notice:\n");
+    out.push_str("  .akar/ contains local AKAR runtime state. Inspect 'git status'.\n");
+    out.push_str("  Intentionally add .akar/ to .gitignore or commit only files you\n");
+    out.push_str("  want tracked. AKAR will not decide for you.\n");
+    out.push_str("  Do not use destructive cleanup blindly.\n");
+    out.push('\n');
     out.push_str("next steps:\n");
     out.push_str("  akar status              — confirm runtime health\n");
     out.push_str("  akar preflight \"<task>\"  — review strategy before acting\n");
@@ -214,6 +220,7 @@ mod tests {
         let out = format_init_report(&result);
         assert!(out.contains("bootstrap: 2 created"), "got: {}", out);
         assert!(out.contains("doctor: OK"), "got: {}", out);
+        assert!(out.contains(".akar/ notice"), "got: {}", out);
         assert!(out.contains("next steps"), "got: {}", out);
     }
 

@@ -381,6 +381,8 @@ akar init
 
 See [docs/INSTALL.md](docs/INSTALL.md) for full install instructions.
 
+**First-run note:** `akar init` bootstraps `.akar/` and prints a `.akar/ notice` explaining that the directory dirties the tree. You decide whether to add `.akar/` to `.gitignore` or commit the runtime files you want tracked. `akar doctor` on a fresh project reports missing NEXT_RUN and baseline as PASS (not WARN) with next-step wording — nothing is broken, you just haven't started a session yet. The "source template directory not present" init warning is normal for installed AKAR; embedded hook templates remain available via `akar hooks --install`.
+
 ---
 
 ## Normal workflow
