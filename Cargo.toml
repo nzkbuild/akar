@@ -1,6 +1,6 @@
 [package]
 name = "akar"
-version = "0.46.0"
+version = "0.47.0"
 edition = "2024"
 description = "AKAR — Adaptive Knowledge & Action Runtime CLI"
 
