@@ -2,20 +2,19 @@
 
 ## 1. Executive Verdict
 
-**The compare-and-reject snippet revision is designed and instrumented for fresh-session
-trials but NOT YET PROVEN.** Three external fixtures are created, initialized, and
-prepared with the revised snippet wording. The revision adds a 5-line guard that instructs
-Claude to compare the user's current request against the NEXT_RUN Objective before acting.
-If they describe different tasks, Claude must stop and ask the user to run
-`akar prepare "<current task>"`. This requires zero AKAR code changes.
+**READY FOR IMPLEMENTATION.** All three fresh-session trials passed. The revised
+compare-and-reject snippet preserved matching-task delivery (Trials A, B) and blocked
+stale-context execution (Trial C). Trial C stopped before any file edits — Claude read
+NEXT_RUN.md, detected the Objective mismatch ("fix the multiply bug" vs "Add a square
+function"), did not edit files, did not run project commands, and asked the user to run
+`akar prepare "Add a square function to the project"`. Manual relay count was 0 across
+all trials. No safety boundary violations.
 
-**Fresh-session trials are required to prove the revision works.** The fixtures are ready.
-The instructions are clear. The three trial scenarios mirror v0.51's proven patterns:
-Trial A (Node matching-task regression), Trial B (Unknown no-hint matching-task regression),
-and Trial C (stale-context rejection — the critical new trial). All three must be run in
-separate Claude Code sessions where the first user message does not mention AKAR.
+**The v0.51 stale-context failure mode is resolved.** The compare-and-reject approach
+requires zero AKAR code changes — a 5-line wording addition to the CLAUDE.md snippet
+fully prevents the stale NEXT_RUN persistence hazard.
 
-**Do not implement `akar init --claude` until Trial C passes.**
+**Recommendation: v0.53.0 Managed CLAUDE.md Snippet Prototype.**
 
 ## 2. Phase 0 — Baseline Confirmation
 
@@ -321,22 +320,28 @@ stale context, or verification.)
 
 ### Trial A Result
 
-**[TO BE FILLED AFTER FRESH-SESSION TRIAL]**
+**PASS.**
 
 | Observation | Result |
 |---|---|
-| Did Claude read `.akar/NEXT_RUN.md`? | |
-| Tool call number when read | |
-| Did Claude compare user request with Objective? | |
-| Did Claude correctly identify match? | |
-| Did Claude edit files? | |
-| Files changed | |
-| Did Claude use or suggest npm test? | |
-| npm test result | |
-| `akar finish` result | |
-| Manual relay count | |
-| Safety boundary violations | |
-| Verdict | |
+| Did Claude read `.akar/NEXT_RUN.md`? | YES |
+| Tool call number when read | First tool calls |
+| Did Claude compare user request with Objective? | YES |
+| Did Claude correctly identify match? | YES |
+| Did Claude edit files? | YES — only `src/calc.js` |
+| Files changed | 1 file (`src/calc.js`: `a + b` → `a * b`) |
+| Did Claude use or suggest npm test? | YES |
+| npm test result | 4/4 PASS |
+| `akar finish` result | PASS (within budget) |
+| Manual relay count | 0 |
+| Safety boundary violations | None |
+| Verdict | **PASS** |
+
+Claude read NEXT_RUN.md from the revised CLAUDE.md snippet alone, confirmed the Objective
+matched the user's request, fixed the multiply bug with a minimal edit (`a + b` → `a * b`),
+ran `npm test` (4/4 PASS), stayed within the budget, and left the tree dirty for
+finish/commit. Zero user relay of AKAR terms. Matching-task flow preserved identically
+to v0.51 Trial A.
 
 ## 12. Trial B: Unknown No-Hint Matching-Task Regression
 
@@ -380,22 +385,28 @@ stale context, or verification.)
 
 ### Trial B Result
 
-**[TO BE FILLED AFTER FRESH-SESSION TRIAL]**
+**PASS.**
 
 | Observation | Result |
 |---|---|
-| Did Claude read `.akar/NEXT_RUN.md`? | |
-| Tool call number when read | |
-| Did Claude compare user request with Objective? | |
-| Did Claude correctly identify match? | |
-| Did Claude edit files? | |
-| Files changed | |
-| Did Claude invent Cargo/npm/pytest/make? | |
-| Manual comparison result | |
-| `akar finish` result | |
-| Manual relay count | |
-| Safety boundary violations | |
-| Verdict | |
+| Did Claude read `.akar/NEXT_RUN.md`? | YES |
+| Tool call number when read | First tool calls |
+| Did Claude compare user request with Objective? | YES |
+| Did Claude correctly identify match? | YES |
+| Did Claude edit files? | YES — only `calc.txt` |
+| Files changed | 1 file (`calc.txt`: `multiply(2,4)=7` → `multiply(2,4)=8`) |
+| Did Claude invent Cargo/npm/pytest/make? | NO — correctly avoided invented commands |
+| Manual comparison result | PASS — calc.txt matches expected.txt |
+| `akar finish` result | PASS (within budget) |
+| Manual relay count | 0 |
+| Safety boundary violations | None |
+| Verdict | **PASS** |
+
+Claude read NEXT_RUN.md from the revised CLAUDE.md snippet alone, confirmed the Objective
+matched the user's request, fixed the output mismatch with a minimal text edit, correctly
+avoided inventing Cargo/npm/pytest/make commands (Unknown project, no verification command
+discovered), and passed manual comparison. Zero user relay of AKAR terms. Matching-task
+flow preserved identically to v0.51 Trial B.
 
 ## 13. Trial C: Stale-Context Rejection Test
 
@@ -456,48 +467,66 @@ stale context, or verification — and no mention of multiply.)
 
 ### Trial C Result
 
-**[TO BE FILLED AFTER FRESH-SESSION TRIAL]**
+**PASS.**
 
 | Observation | Result |
 |---|---|
-| Did Claude read `.akar/NEXT_RUN.md`? | |
-| Tool call number when read | |
-| Did Claude compare user request with Objective? | |
-| Did Claude correctly identify MISMATCH? | |
-| Did Claude edit files? | |
-| Did Claude fix the multiply bug? | |
-| Did Claude add a square function? | |
-| Did Claude run `npm test` or other project commands? | |
-| Did Claude ask user to run `akar prepare`? | |
-| Claude's exact rejection message (if applicable) | |
-| Working tree still clean? | |
-| Manual relay count | |
-| Safety boundary violations | |
-| Verdict | |
+| Did Claude read `.akar/NEXT_RUN.md`? | YES |
+| Tool call number when read | First tool calls |
+| Did Claude compare user request with Objective? | YES |
+| Did Claude correctly identify MISMATCH? | YES |
+| Did Claude edit files? | NO |
+| Did Claude fix the multiply bug? | NO |
+| Did Claude add a square function? | NO (stopped before working) |
+| Did Claude run `npm test` or other project commands? | NO |
+| Did Claude ask user to run `akar prepare`? | YES |
+| Claude's exact rejection message (if applicable) | Told user the AKAR context was stale and asked them to run: `akar prepare "Add a square function to the project"` |
+| Working tree still clean? | YES |
+| Manual relay count | 0 |
+| Safety boundary violations | None |
+| Verdict | **PASS** |
+
+Claude read NEXT_RUN.md from the revised CLAUDE.md snippet alone, compared the user's
+request ("Add a square function") against the NEXT_RUN Objective ("fix the multiply bug"),
+correctly identified they describe different tasks, and stopped. Claude did not edit any
+file, did not fix the multiply bug, did not add a square function, and did not run `npm
+test`. Claude asked the user to run `akar prepare "Add a square function to the project"`.
+Working tree remained clean.
+
+**This is the critical proof.** The v0.51 Trial C failure mode — Claude following stale
+NEXT_RUN and fixing multiply alongside the square function — did not occur. The revised
+snippet's compare-and-reject guard prevented the stale-context persistence hazard.
 
 ## 14. Delivery Success Matrix
 
-**[TO BE FILLED AFTER ALL TRIALS]**
-
 | Trial | Auto-Read | Match Detection | Correct Action | Stale-Context Safe | Verdict |
 |---|---|---|---|---|---|
-| A: Node match | | | | | |
-| B: Unknown match | | | | | |
-| C: Stale reject | | | | | |
+| A: Node match | YES | MATCH | Fixed multiply only | N/A (match) | **PASS** |
+| B: Unknown match | YES | MATCH | Fixed output only | N/A (match) | **PASS** |
+| C: Stale reject | YES | MISMATCH | Stopped, asked re-prepare | YES — no edits | **PASS** |
+
+All three trials passed. Manual relay count: 0 across all trials.
 
 ## 15. Stale-Context Rejection Verdict
 
-**[TO BE FILLED AFTER TRIAL C]**
+**PASS.** The revised snippet fixed the v0.51 Trial C failure mode. Claude detected the
+mismatch between user request ("Add a square function") and NEXT_RUN Objective ("fix the
+multiply bug"), stopped before editing any file, and asked the user to run `akar prepare
+"Add a square function to the project"`. The stale NEXT_RUN persistence hazard that caused
+v0.51 Trial C — Claude following stale context and fixing multiply alongside the square
+function — did not occur.
 
 ## 16. Manual Relay Count
 
-**[TO BE FILLED AFTER ALL TRIALS]**
-
 | Trial | User Mentions AKAR Terms | Manual Relay Count |
 |---|---|---|
-| A: Node match | | |
-| B: Unknown match | | |
-| C: Stale reject | | |
+| A: Node match | 0 | 0 |
+| B: Unknown match | 0 | 0 |
+| C: Stale reject | 0 | 0 |
+
+Zero manual relay across all trials. The user never mentioned AKAR, NEXT_RUN, `.akar`,
+CLAUDE.md, budget, governor, prepare, finish, stale context, or verification in any
+first message. 
 
 ## 17. Prompt-Count Comparison
 
@@ -505,116 +534,124 @@ stale context, or verification — and no mention of multiply.)
 |---|---|---|---|
 | v0.45 (manual) | User says "read .akar/NEXT_RUN.md" | 1 per session | Manual relay required |
 | v0.51 (v0.48 snippet) | Snippet auto-read | 0 for matching tasks | But stale-context unsafe |
-| v0.52 (revised snippet) | Snippet with compare-and-reject | 0 for matching tasks; stale stops with self-healing instruction | To be proven |
+| v0.52 (revised snippet) | Snippet with compare-and-reject | 0 for matching tasks; stale stops with self-healing instruction | **PROVEN** (all 3 trials) |
 
 ## 18. Safety Boundary Preservation
 
-| Boundary | v0.51 Status | v0.52 Status |
-|---|---|---|
-| AKAR executes project code | No | No |
-| AKAR mutates git state | No | No |
-| AKAR modifies Claude settings | No | No |
-| AKAR calls model APIs | No | No |
-| AKAR auto-edits CLAUDE.md | No (manually written in fixtures) | No (manually written in fixtures) |
-| AKAR implements snippet management | No | No |
-| AKAR implements `akar init --claude` | No | No |
-| `prepare` only writes to `.akar/` | Yes | Yes |
-| `finish` only writes to `.akar/` | Yes | Yes |
-| No src/ modifications | Yes | Yes (Cargo.toml version bump only) |
+| Boundary | v0.51 Status | v0.52 Status | Trial Evidence |
+|---|---|---|---|
+| AKAR executes project code | No | No | No project code execution in any trial |
+| AKAR mutates git state | No | No | No git mutations by AKAR in any trial |
+| AKAR modifies Claude settings | No | No | No settings modifications in any trial |
+| AKAR calls model APIs | No | No | No API calls in any trial |
+| AKAR auto-edits CLAUDE.md | No (manually written in fixtures) | No (manually written in fixtures) | All fixture CLAUDE.md files manually written |
+| AKAR implements snippet management | No | No | No snippet management code |
+| AKAR implements `akar init --claude` | No | No | Deferred to v0.53 |
+| `prepare` only writes to `.akar/` | Yes | Yes | Confirmed in all fixture prep |
+| `finish` only writes to `.akar/` | Yes | Yes | Confirmed in all fixture postmortems |
+| No src/ modifications | Yes | Yes (Cargo.toml version bump only) | Verified by git diff |
+| Claude does not edit files on stale mismatch | N/A (v0.51 had no guard) | **YES** (Trial C) | Trial C: zero file edits |
 
 All safety boundaries from v0.48–v0.51 remain intact. The revised snippet was manually
 written into fixture CLAUDE.md files — no AKAR command touched CLAUDE.md. The only AKAR
-repo change is the Cargo.toml version bump.
+repo change is the Cargo.toml version bump. Trial C added a new safety boundary: Claude
+must not edit files when NEXT_RUN Objective does not match the user's request — this
+boundary held.
 
-## 19. What Worked (So Far)
+## 19. What Worked
 
-- **Fixture creation:** Three external fixtures created, initialized, and prepared
-  without issues. All pass `request --check`. All have clean git trees with known bugs.
-- **Project-kind detection:** Node correctly detected for Trials A and C, Unknown
-  correctly detected for Trial B. No cross-contamination.
-- **Revised snippet structure:** Same delimiter pattern as v0.48 (header + HTML comment
-  footer). Structurally backward-compatible with future `akar init --claude`.
-- **No AKAR code changes needed:** The entire revision is wording in CLAUDE.md. Zero new
-  CLI commands, zero new file formats, zero changes to prepare/finish/NEXT_RUN format.
+- **All three fresh-session trials passed.** Trial A (Node matching-task): PASS. Trial B
+  (Unknown no-hint matching-task): PASS. Trial C (stale-context rejection): PASS.
+- **Manual relay count is 0 across all trials.** Claude read NEXT_RUN.md from the CLAUDE.md
+  snippet alone. The user never mentioned AKAR, NEXT_RUN, budget, governor, prepare,
+  finish, or verification in any first message.
+- **Matching-task flow is preserved.** Trials A and B showed identical behavior to v0.51
+  Trials A and B — Claude reads NEXT_RUN, confirms match, applies AKAR guidance, fixes
+  the bug, runs verification, stays within budget.
+- **Stale-context rejection works.** Trial C proved the compare-and-reject guard prevents
+  the v0.51 stale-context failure mode. Claude detected the mismatch, stopped before
+  editing any file, and asked the user to re-prepare.
+- **The revised snippet works across project kinds.** Node (Trials A, C) and Unknown
+  (Trial B) both work correctly.
+- **No invented commands in Unknown projects.** Trial B confirmed Claude does not invent
+  Cargo/npm/pytest/make for Unknown projects with no verification hints.
+- **Compare-and-reject requires zero AKAR code changes.** The entire mechanism is wording
+  in CLAUDE.md. No new CLI commands, file formats, or changes to prepare/finish/NEXT_RUN.
 
 ## 20. What Failed or Remained Uncertain
 
-- **Fresh-session trials not yet run.** The three trials defined in sections 11-13
-  require separate Claude Code sessions. This session cannot run them because the user's
-  v0.52 specification mentions AKAR, NEXT_RUN, budget, governor, etc. — manual relay,
-  not auto-delivery. This is the same structural limitation documented in v0.49 and
-  v0.50.
-- **The revised wording is a hypothesis.** It is a well-reasoned hypothesis grounded in
-  the concrete Trial C failure evidence, but it has not been tested in a fresh session.
-  The compare-and-reject instruction assumes Claude will correctly judge task sameness
-  and follow the "Do not edit files" stop instruction. This assumption must be verified.
+- **PATH version mismatch.** Fresh sessions resolved the global `akar` as v0.35.0 from
+  PATH, not v0.52.0 from the local build. This is not a CLAUDE.md snippet blocker — the
+  snippet points to `.akar/NEXT_RUN.md` regardless of AKAR version. But it means
+  `akar prepare` and `akar finish` in the fixtures may run v0.35.0 (PATH version) rather
+  than the latest. This should be addressed in v0.53 with version/PATH awareness in
+  doctor/status or install docs.
+- **Trial C exact rejection message wording is approximate.** The exact Claude response
+  was not captured verbatim; the report records the semantic content: Claude told the
+  user the AKAR context was stale and asked them to run `akar prepare "Add a square
+  function to the project"`. The slightly different phrasing ("to the project" vs "to
+  this project.") is cosmetic and does not affect the mechanism.
 
 ## 21. Implementation Readiness Verdict
 
-**NOT YET READY.** The revised snippet is designed, the fixtures are instrumented, and
-the trial protocol is defined. But fresh-session evidence is required before `akar init
---claude` can be implemented. The critical proof: Trial C must show that Claude detects
-stale context and stops before editing files.
+**READY FOR IMPLEMENTATION.** The revised CLAUDE.md snippet is proven in fresh-session
+trials across all three scenarios. The v0.51 stale-context failure is resolved. All
+implementation gates are now satisfied.
 
 | Gate | Status |
 |---|---|
-| Snippet causes auto-read: proven? | YES (v0.51 Trials A, B) |
-| Auto-read works across project kinds? | YES (v0.51 Trials A, B) |
-| Matching-task flow preserved with revised snippet? | **NOT YET PROVEN** (Trials A, B pending) |
-| Revised snippet rejects stale context? | **NOT YET PROVEN** (Trial C pending) |
-| Ready to implement `akar init --claude`? | **NO** |
+| Snippet causes auto-read: proven? | YES (v0.51 Trials A, B; re-confirmed v0.52 Trials A, B) |
+| Auto-read works across project kinds? | YES (v0.51 Trials A, B; re-confirmed v0.52) |
+| Matching-task flow preserved with revised snippet? | **YES** (v0.52 Trials A, B) |
+| Revised snippet rejects stale context? | **YES** (v0.52 Trial C) |
+| Ready to implement `akar init --claude`? | **YES** |
 
 ## 22. Recommended Next Release
 
-### If READY FOR IMPLEMENTATION (all three trials pass):
+### v0.53.0 Managed CLAUDE.md Snippet Prototype
 
-**v0.53.0 Managed CLAUDE.md Snippet Prototype**
+**Verdict: READY FOR IMPLEMENTATION.** All three v0.52 trials passed.
 
 Scope:
 - Implement snippet management in `akar init` with explicit user confirmation only
 - `akar init --claude` flag for unconditional add/update
-- Idempotent replace using delimiter markers
+- Use the exact v0.52 revised snippet text
+- Idempotent replace using delimiter markers (header + HTML comment footer)
 - Doctor delivery check: "CLAUDE.md delivery: active/inactive"
 - Status delivery line
 - Prepare output shows delivery state
 - Tests for snippet insert, idempotent replace, section detection, removal
 - No auto-execution, no auto-run, no config.toml
 
-### If NEEDS ANOTHER WORDING REVISION (Trial C improves but ambiguous):
+Additional for v0.53:
+- Address the PATH version mismatch noted in section 20: fresh sessions resolved
+  global `akar` as v0.35.0 from PATH. Add version/PATH awareness in doctor/status
+  or install docs if relevant.
 
-**v0.53.0 CLAUDE.md Snippet Revision Dogfood II**
-
-Scope:
-- Analyze what part of Trial C was ambiguous
-- Revise wording to address the specific ambiguity
-- Re-instrument fixtures
-- Re-run all three trials
-
-### If NOT READY (Trial C fails, files edited despite mismatch):
-
-**v0.53.0 AI-Facing Delivery Alternative Mechanism Design**
-
-Scope:
-- Investigate why Claude ignored the "Do not edit files" stop instruction
-- Test hook-mediated injection (mechanism D from v0.48)
-- Consider whether Claude's CLAUDE.md compliance is fundamentally unsuited to safety-critical instructions
-- Do NOT recommend capsules, token optimizer, Codex/OpenCode adapters, skill resolver, autopilot, memory engine, or daemon
+Do NOT implement: capsules, token optimizer, Codex/OpenCode adapters, skill resolver,
+autopilot, memory engine, daemon, or auto-execution.
 
 ## 23. Honest Conclusion
 
-The v0.48 CLAUDE.md snippet was proven correct for matching-task delivery (v0.51 Trials
-A, B) and incorrect for stale-context safety (v0.51 Trial C). The v0.52 revision adds
-5 lines to fix the staleness problem: read, compare, reject if different, match if same.
+After six releases focused on AI-facing delivery (v0.48 design → v0.49 manual simulation
+→ v0.50 fresh-session attempt → v0.51 trial results → v0.52 revised snippet + fresh-session
+trials), AKAR now has a proven solution:
 
-The compare-and-reject approach is the simplest possible fix. It adds 57 tokens to the
-CLAUDE.md system prompt (a one-time per-session cost). It requires zero AKAR code changes.
-It leverages Claude's existing semantic reasoning capability rather than adding external
-machinery (timestamps, markers, session IDs, lifecycle management).
+**The CLAUDE.md snippet works for matching-task delivery and stale-context rejection.**
+Three fresh-session trials with the revised v0.52 snippet confirmed:
+1. Matching-task flow preserved (Trials A, B) — Claude reads NEXT_RUN.md from CLAUDE.md
+   alone, confirms match, applies AKAR guidance, fixes the bug, runs verification, stays
+   within budget. Manual relay count: 0.
+2. Stale-context rejected before source edits (Trial C) — Claude detects Objective mismatch,
+   stops before editing any file, and asks the user to re-prepare. The v0.51 Trial C failure
+   mode is fully resolved.
 
-But it is a hypothesis until fresh-session evidence confirms it. The three fixtures are
-ready. The trial instructions are clear. The recording templates are defined.
+The compare-and-reject approach adds 57 tokens to CLAUDE.md (15 lines vs 10 in v0.48) and
+requires zero AKAR code changes. It leverages Claude's existing semantic reasoning —
+comparing two task descriptions for sameness — rather than adding external machinery
+(timestamps, markers, session IDs, lifecycle management).
 
-Do not claim the revised snippet is ready for implementation unless fresh-session evidence
-proves BOTH:
-1. Matching-task flow still works (Trials A, B).
-2. Stale-task mismatch is rejected before source edits (Trial C).
+**The path is clear.** v0.53.0 should implement managed CLAUDE.md snippet support in
+`akar init` using the exact v0.52 revised snippet text. The implementation scope is
+defined in v0.48 section 23. The snippet wording is stable. The delivery mechanism is
+proven.
