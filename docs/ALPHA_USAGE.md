@@ -20,7 +20,7 @@ This does **not** mean:
 
 ## What stable advisory alpha supports
 
-- Local CLI advisory loop (init, doctor, status, preflight, request, postmortem, learn)
+- Local CLI advisory loop (init, doctor, status, prepare, finish, preflight, request, postmortem, learn)
 - Project-kind-aware NEXT_RUN prompt compilation (Rust, Node, Python, Unknown)
 - Doctor/status/governor health and readiness guidance
 - Preflight snapshot with diff budget
@@ -84,51 +84,47 @@ akar doctor
 akar status
 ```
 
-### 7. Take a baseline snapshot
+### 7. Start a measured session
 
-Ensure your working tree is clean (commit or intentionally handle any dirty files first). Then:
-
-```bash
-akar preflight --snapshot "<task description>"
-```
-
-AKAR refuses a dirty snapshot — this is by design. If `.akar/` itself is making the tree dirty, AKAR prints an advisory explaining the cause and your options (`.gitignore` or commit). AKAR will not auto-ignore, auto-delete, or auto-commit anything.
-
-### 8. Generate the NEXT_RUN prompt
+Once the tree is clean, `prepare` consolidates four manual steps into one:
 
 ```bash
-akar request "your actual task description"
+akar prepare "your actual task description"
 ```
 
-### 9. Validate the prompt
+This replaces the pre-v0.46 manual sequence:
+- `akar preflight --snapshot "<task>"` — baseline snapshot
+- `akar request "<task>"` — generate NEXT_RUN.md
+- `akar request --check` — validate NEXT_RUN.md
+- `akar governor` — surface governor decision
 
-```bash
-akar request --check
-```
+Prepare output includes: task, project kind, baseline info, request mode, validation (PASS), governor decision, and project-appropriate verification guidance.
 
-### 10. Use the prompt with Claude Code
+### 8. Use the prompt with Claude Code
 
 The file `.akar/NEXT_RUN.md` is the compiled guardrail prompt. Hand it to Claude Code manually. AKAR does not execute this prompt, does not launch Claude Code, and does not monitor the session.
 
-### 11. Do the work manually
+### 9. Do the work manually
 
 Follow the NEXT_RUN rules: stay within the diff budget, obey the allowed/forbidden commands, stop on the listed stop conditions. Run your project tests yourself (`cargo test`, `npm test`, `python -m pytest`, etc.). AKAR does not run project tests for Node or Python projects — `akar verify` automated execution is Rust/Cargo only.
 
-### 12. Run postmortem
+### 10. Finish the session
 
 After the task is done and tests pass:
 
 ```bash
-akar postmortem --diff --baseline
+akar finish
 ```
 
-### 13. Check learning patches
+This replaces the pre-v0.46 manual sequence:
+- `akar postmortem --diff --baseline` — diff measurement
+- `akar learn --list` — learning patch summary
+- `akar governor` — governor decision
+- `akar doctor` — health check
 
-```bash
-akar learn --list
-```
+Finish output includes: baseline info, budget vs actual diff, verdict (PASS/EXCEEDED/UNKNOWN), learning patches, governor decision, health summary (FAILs and WARNs surfaced). Exits non-zero on budget exceeded.
 
-### 14. Commit intentionally
+### 11. Commit intentionally
 
 Commit only the changes you intended. Do not commit `.akar/` generated files unless you've decided to track them. Do not commit secrets or test artifacts.
 

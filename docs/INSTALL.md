@@ -191,15 +191,16 @@ For projects without clear marker files, AKAR scans local files for likely verif
 
 `akar doctor` (v0.32.0+) reports the detected project kind as "project kind" (not "cargo project"). Rust/Node/Python are PASS; Unknown is WARN. Node and Python projects no longer receive a misleading Cargo.toml-absent warning.
 
-### Recommended dogfood command
+### Recommended usage (v0.46.0+)
 
-Once bootstrapped, the recommended shape for starting a session is to pass the actual task straight to `akar request` so the compiled `.akar/NEXT_RUN.md` prompt is self-describing instead of generic:
+Once bootstrapped, the recommended shape for a measured session is two commands:
 
 ```
-akar request "fix one small failing test"
+akar prepare "your task description"    # before the Claude Code session
+akar finish                             # after the Claude Code session
 ```
 
-Hand the resulting `.akar/NEXT_RUN.md` to Claude as-is. Run `akar request --check` afterward if you want to validate the prompt before handing it off.
+This consolidates the pre-v0.46 manual sequence of 4+ commands (preflight --snapshot, request, request --check, governor) into a single prepare, and 3+ commands (postmortem --diff --baseline, learn --list, governor, doctor) into a single finish. Both commands are advisory only — they do not run project code, mutate git, or modify Claude settings.
 
 ## Stable advisory alpha notes
 

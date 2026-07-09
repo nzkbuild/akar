@@ -234,6 +234,26 @@ Commands:
 
 ## Baseline diff workflow
 
+### Quick (v0.46.0+)
+
+Two commands — `prepare` and `finish` — consolidate the manual sequence:
+
+Step 1 — before your Claude Code session:
+```
+akar prepare "fix the login button"
+```
+Requires a clean working tree. Takes a snapshot, writes `DIFF_BASELINE.json`, generates and validates `NEXT_RUN.md`, reports governor decision and verification guidance.
+
+Step 2 — run your Claude Code session manually. Hand Claude `.akar/NEXT_RUN.md`.
+
+Step 3 — after your session:
+```
+akar finish
+```
+Requires `DIFF_BASELINE.json`. Measures diff against baseline, shows budget verdict, learn and governor summary, doctor health check.
+
+### Manual (pre-v0.46.0)
+
 Step 1 — before your Claude Code session:
 ```
 akar preflight --snapshot "fix the login button"
@@ -247,6 +267,7 @@ Step 3 — after your session:
 akar postmortem --diff --baseline
 ```
 Measures from saved HEAD to current working tree. Reports PASS, EXCEEDED, or UNKNOWN.
+
 AKAR does not enforce, block, revert, stash, commit, reset, or clean changes.
 
 ---
@@ -390,6 +411,13 @@ See [docs/INSTALL.md](docs/INSTALL.md) for full install instructions.
 ```
 akar init               — first-run setup (bootstrap + doctor + guide)
 akar doctor             — confirm health
+akar prepare "task"     — snapshot + request + check + governor (v0.46.0+)
+akar finish             — postmortem + learn + governor + status (v0.46.0+)
+```
+
+### Manual (pre-v0.46.0)
+
+```
 akar preflight "task"   — review strategy before acting
 akar run "task"         — full workflow in one command
 akar postmortem         — review what happened
@@ -404,6 +432,8 @@ akar learn              — propose a learning note if needed
 |---|---|
 | `akar init` | First-run onboarding: bootstrap + doctor + guide |
 | `akar init --claude` | Onboarding with Claude Code integration instructions |
+| `akar prepare "<task>"` | Consolidated pre-task: snapshot baseline + generate NEXT_RUN + validate + report governor (v0.46.0+) |
+| `akar finish` | Consolidated post-task: diff postmortem + learn + governor + health check (v0.46.0+) |
 | `akar status` | Runtime health at a glance |
 | `akar bootstrap` | Initialise `.akar/` with memory templates |
 | `akar doctor` | Read-only dogfood-readiness check (environment, files, hooks, telemetry, git, next-run; OK/WARN/FAIL) |
