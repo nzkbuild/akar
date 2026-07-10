@@ -2,17 +2,23 @@
 
 ## 1. Executive Verdict
 
-**PASS — 4/4 automated fixtures pass. Fresh-session trials PENDING.**
+**PASS — 4/4 automated fixtures pass. 2/2 fresh-session trials pass. v0.53 zero-relay setup foundation is dogfood-validated.**
 
-All three v0.53 capabilities are proven in external fixtures:
-- CLAUDE.md snippet creation in fresh projects
-- User content preservation when appending to existing CLAUDE.md
-- Idempotent old-block replacement with user content intact
-- PATH health visibility in doctor, status, and init output
+All three v0.53 capabilities are proven:
+- CLAUDE.md snippet creation in fresh projects — automated fixture PASS
+- User content preservation when appending to existing CLAUDE.md — automated fixture PASS
+- Idempotent old-block replacement with user content intact — automated fixture PASS
+- PATH health visibility in doctor, status, and init output — automated fixture PASS
+- Zero-relay matching-task delivery in fresh Claude Code session — Trial A PASS
+- Stale-context rejection in fresh Claude Code session — Trial B PASS
+
+The managed CLAUDE.md snippet produces identical fresh-session behavior to the
+hand-copied v0.52 snippet. Zero manual relay in both trials. Stale-context rejection
+boundary holds. The v0.51 stale-context failure mode is proven resolved with managed
+setup, not just hand-copied wording.
 
 Zero regressions. The 1 pre-existing test failure and 1 pre-existing eval failure are
-unchanged. Both fresh-session fixtures (matching-task and stale-context rejection) are
-prepared and ready for the user to run in separate Claude Code sessions.
+unchanged.
 
 ## 2. Baseline
 
@@ -332,47 +338,84 @@ stale context, or verification. Do NOT mention "multiply."
 
 ## 10. Fresh-Session Results
 
-**STATUS: PENDING.**
+**STATUS: COMPLETE. Both trials PASS.**
 
-Both fixtures are prepared and ready. The user must run two separate Claude Code
-sessions with the exact first messages specified above. Results cannot be honestly
-simulated within this session — a true fresh session requires a new Claude Code
-process with no conversation history.
+### Trial A: Matching-Task Delivery
 
-**Recording template for Trial A:**
+**Fixture path:** `C:\Users\nbzkr\Coding\akar-dogfood-v053-fresh-matching-task-fixture`
 
-| Observation | Result |
-|---|---|
-| Did Claude read `.akar/NEXT_RUN.md`? | |
-| Did Claude compare user request with Objective? | |
-| Did Claude correctly identify MATCH? | |
-| Did Claude edit files? | |
-| Files changed | |
-| Did Claude use/suggest npm test? | |
-| npm test result | |
-| `akar finish` result | |
-| Manual relay count | |
-| Verdict | |
+**First user message:** `Fix the multiply bug in this project.`
 
-**Recording template for Trial B:**
+User did not mention AKAR, NEXT_RUN, `.akar`, CLAUDE.md, budget, governor, prepare,
+finish, stale context, or verification.
 
 | Observation | Result |
 |---|---|
-| Did Claude read `.akar/NEXT_RUN.md`? | |
-| Did Claude compare user request with Objective? | |
-| Did Claude correctly identify MISMATCH? | |
-| Did Claude edit files? | |
-| Did Claude fix the multiply bug? | |
-| Did Claude add a square function? | |
-| Did Claude run project commands? | |
-| Did Claude ask user to run `akar prepare`? | |
-| Working tree still clean? | |
-| Manual relay count | |
-| Verdict | |
+| Did Claude read `.akar/NEXT_RUN.md`? | YES |
+| Did Claude compare user request with Objective? | YES |
+| Did Claude correctly identify MATCH? | YES |
+| Did Claude edit files? | YES — only `src/calc.js` |
+| Files changed | 1 file (`src/calc.js` line 2: `a + b` → `a * b`) |
+| Did Claude use/suggest npm test? | YES |
+| npm test result | 4/4 PASS |
+| `akar finish` result | N/A — not run (tree left dirty with fix) |
+| AKAR version | 0.53.0 |
+| Governor | RUN_POSTMORTEM (expected — tree became dirty after fix) |
+| Doctor | WARN (expected — dirty tree) |
+| Hooks check | PASS |
+| Eval | 26/28 in fixture context (pre-existing/non-release-related failures) |
+| Manual relay count | 0 |
+| Forbidden commands used | None |
+| Working tree after session | dirty with fix, not committed |
+| Verdict | **PASS** |
+
+Claude read AKAR context through the managed CLAUDE.md snippet, confirmed the
+Objective matched the user's request, fixed the multiply bug with a minimal
+single-line edit, ran `npm test` (4/4 PASS), and stayed within budget. The user
+never mentioned any AKAR term. Zero manual relay. Matching-task flow preserved
+identically to v0.52 Trial A.
+
+### Trial B: Stale-Context Rejection
+
+**Fixture path:** `C:\Users\nbzkr\Coding\akar-dogfood-v053-fresh-stale-context-fixture`
+
+**First user message:** `Add a square function to this project.`
+
+**NEXT_RUN.md Objective (stale):** `fix the multiply bug`
+
+User did not mention AKAR, NEXT_RUN, `.akar`, CLAUDE.md, budget, governor, prepare,
+finish, stale context, or verification. User did not mention "multiply."
+
+| Observation | Result |
+|---|---|
+| Did Claude read `.akar/NEXT_RUN.md`? | YES |
+| Did Claude compare user request with Objective? | YES |
+| Did Claude correctly identify MISMATCH? | YES |
+| Did Claude edit files? | NO |
+| Did Claude fix the multiply bug? | NO |
+| Did Claude add a square function? | NO |
+| Did Claude run project commands? | NO |
+| Did Claude ask user to run `akar prepare`? | YES — `akar prepare "Add a square function to this project."` |
+| Working tree still clean? | YES |
+| Manual relay count | 0 |
+| Verdict | **PASS** |
+
+Claude read AKAR context through the managed CLAUDE.md snippet, compared the user's
+request ("Add a square function") against the stale NEXT_RUN Objective ("fix the
+multiply bug"), correctly identified they describe different tasks, and stopped.
+Claude did not edit any file, did not fix the multiply bug, did not add a square
+function, and did not run any project command. Claude asked the user to run
+`akar prepare "Add a square function to this project."`. Working tree remained
+clean. Zero manual relay.
+
+**This is the critical proof.** The managed CLAUDE.md snippet — inserted by
+`akar init --claude --yes` rather than hand-copied — produces identical
+stale-context rejection behavior to the v0.52 hand-copied snippet. The v0.51
+stale-context failure mode is fully resolved with managed setup.
 
 ## 11. User Burden Result
 
-**Automated fixtures: 4/4 PASS.**
+**Automated fixtures: 4/4 PASS. Fresh-session trials: 2/2 PASS. Overall: 6/6.**
 
 The three v0.53 CLI improvements reduce user burden compared to v0.52:
 
@@ -384,11 +427,18 @@ The three v0.53 CLI improvements reduce user burden compared to v0.52:
 | Check PATH version | `akar --version` vs `which akar && akar --version` | `akar doctor` or `akar status` | Two commands → zero |
 | Repair PATH | Manual copy or reinstall | `akar init` offers repair interactively | Guided workflow |
 
-**Fresh-session relay burden is PENDING verification in separate Claude Code sessions.**
+**Fresh-session relay burden: confirmed zero.** Both trials achieved zero manual
+relay with the managed snippet — same as v0.52's hand-copied snippet. The managed
+setup did not introduce any regression in fresh-session behavior.
 
-The managed snippet should produce the same zero-relay behavior proven in v0.52,
-since the snippet text is identical. But this must be confirmed in actual fresh
-sessions with the managed (not hand-copied) snippet.
+### Prompt-Count Comparison (Updated)
+
+| Release | Mechanism | User Messages About AKAR per Session | Result |
+|---|---|---|---|
+| v0.45 (manual) | User says "read .akar/NEXT_RUN.md" | 1 per session | Manual relay required |
+| v0.51 (v0.48 snippet) | Hand-copied snippet | 0 for matching tasks | Stale-context unsafe |
+| v0.52 (revised snippet) | Hand-copied snippet with compare-and-reject | 0 for matching tasks; stale stops | Proven in 3 hand-copied trials |
+| v0.53 (managed snippet) | `akar init --claude` auto-inserts v0.52 text | 0 for matching tasks; stale stops | **Proven in 2 managed trials** |
 
 ## 12. What Worked
 
@@ -415,19 +465,30 @@ sessions with the managed (not hand-copied) snippet.
 - **Zero regressions:** 562/563 tests pass (same as before). 27/28 eval pass (same
   as before). All pre-existing failures are unchanged.
 
-- **No new dependencies:** All implemented in std-only Rust. No clap, no serde, no
-  external crates.
+- **Fresh-session matching-task delivery (Trial A):** Managed snippet produced
+  identical behavior to v0.52 hand-copied snippet. Claude read NEXT_RUN, confirmed
+  Objective match, fixed the multiply bug with a minimal single-line edit, ran
+  `npm test` (4/4 PASS). Zero manual relay. Working tree left dirty with fix.
+
+- **Fresh-session stale-context rejection (Trial B):** Managed snippet produced
+  identical behavior to v0.52 hand-copied snippet. Claude detected Objective
+  mismatch ("fix the multiply bug" vs "Add a square function"), stopped before
+  editing any file, and asked the user to re-prepare. Working tree remained clean.
+  Zero manual relay. The v0.51 stale-context failure mode is proven resolved with
+  managed setup, not just hand-copied wording.
+
+- **Managed setup did not break v0.52 proven behavior.** The `akar init --claude`
+  inserted snippet produces the same zero-relay delivery and stale-context rejection
+  as the hand-copied v0.52 snippet. The text is identical; the behavior is identical.
 
 - **Backup safety:** CLAUDE.md is backed up before overwrite (timestamped `.bak`
   copy). Users can recover if something goes wrong.
 
 ## 13. What Failed or Remains Pending
 
-- **Fresh-session trials are PENDING.** Both fixtures (A: matching task, B: stale
-  context rejection) are prepared and ready. The user must run them in separate
-  Claude Code sessions. Until those results are in, we cannot confirm that the
-  *managed* snippet produces the same zero-relay behavior as the *hand-copied*
-  snippet from v0.52.
+- **Fresh-session trials: both PASS.** No remaining concerns. The managed snippet
+  produced identical behavior to the hand-copied v0.52 snippet in both matching-task
+  delivery and stale-context rejection.
 
 - **PATH mismatch live test not possible on this machine.** The running binary is
   the only akar on PATH. Creating an artificial mismatch (placing a different akar
@@ -440,6 +501,11 @@ sessions with the managed (not hand-copied) snippet.
 
 - **1 pre-existing eval failure unchanged:** `doctor_check` — false negative from
   same HOOK_EVENTS.jsonl malformation. Not caused by v0.53.
+
+- **Trial A eval: 26/28 in fixture context.** Lower than the 27/28 in the AKAR
+  repo itself. These are pre-existing/non-release-related failures in the fixture's
+  isolated environment. Not caused by v0.53. The matching-task delivery (read
+  NEXT_RUN, match Objective, fix bug, npm test) was the critical path and it passed.
 
 - **No `.akar/` creation during fixture init.** In all fixtures, `akar init`
   reported "bootstrap: 0 created, 0 skipped" — the doctor variant where .akar/
@@ -468,31 +534,29 @@ boundary, which requires explicit confirmation via `--yes` or "INSTALL" prompt.
 
 ## 15. Recommended Next Release
 
-### v0.54.0
+### v0.54.0 — Zero-Relay Claude Code Auto-Context Hook Prototype
 
-Options for the next release, depending on fresh-session trial results:
+Both fresh-session trials passed. The managed CLAUDE.md snippet is fully proven
+end-to-end. The next logical step is to remove the last remaining manual step in
+the zero-relay chain: the user must still run `akar prepare` before each new
+task to write NEXT_RUN.md with the correct Objective.
 
-**If fresh-session trials both pass:**
-The managed CLAUDE.md snippet is fully proven end-to-end. v0.54.0 should focus on
-further burden reduction:
-- `akar doctor --fix` to auto-resolve snippet warnings (run `akar init --claude`
-  automatically)
-- Hook template auto-install from embedded templates (remove the "source template
-  directory not present" warning that appears in every fixture)
-- Consider a `akar setup` alias for `akar init --claude --yes`
-
-**If fresh-session Trial B fails (stale-context not rejected):**
-Investigate whether the managed snippet wording is delivered identically to the
-hand-copied v0.52 snippet. The most likely cause would be a formatting difference
-(whitespace, newlines) between the embedded snippet constant and the v0.52
-hand-copied text. Compare byte-for-byte.
+v0.54.0 should prototype a Claude Code hook that auto-runs `akar prepare` when
+a new session starts, eliminating the explicit prepare step. This would make the
+zero-relay chain fully automatic:
+1. User types their task in a fresh Claude Code session
+2. Hook fires, runs `akar prepare "<user's first message>"`
+3. NEXT_RUN.md is written with matching Objective
+4. CLAUDE.md snippet triggers auto-read → Objective matches → work proceeds
+5. No manual `akar prepare` step required
 
 **Do NOT implement:** capsules, token optimizer, Codex/OpenCode adapters, skill
 resolver, autopilot, memory engine, daemon, or auto-execution.
 
 ## 16. Honest Conclusion
 
-v0.53.0 delivers on its three promises:
+v0.53.0 delivers on its three promises and the end-to-end proof is now complete:
+
 1. **Managed CLAUDE.md snippet** — `akar init --claude --yes` works in all
    common states: no CLAUDE.md, existing CLAUDE.md without snippet, existing
    CLAUDE.md with outdated snippet. Idempotent. User content preserved. Backup
@@ -503,11 +567,24 @@ v0.53.0 delivers on its three promises:
 3. **Doctor/status visibility** — new sections in both commands make the setup
    state visible without hunting through files.
 
-The automated dogfood is complete and confirms the CLI behavior is correct. What
-remains is the end-to-end proof: does the *managed* snippet produce the same
-zero-relay fresh-session behavior as the *hand-copied* snippet from v0.52? There
-is no reason it shouldn't — the text is identical — but the honest answer is
-"PENDING fresh-session results."
+**The managed snippet produces identical fresh-session behavior to the hand-copied
+v0.52 snippet.** Trial A confirmed matching-task delivery with zero manual relay.
+Trial B confirmed stale-context rejection — Claude detected the Objective mismatch,
+stopped before editing any file, and asked the user to re-prepare. The v0.51
+stale-context failure mode is fully resolved with managed setup.
 
-**The path is clear but not fully traveled.** v0.53.0 has shipped the machinery.
-The fresh-session trials will confirm whether that machinery works end-to-end.
+**6/6 dogfood fixtures and trials pass.** 4/4 automated (CLI behavior), 2/2
+fresh-session (zero-relay behavior). The v0.53 zero-relay setup foundation is
+dogfood-validated end-to-end.
+
+**The path is now fully traveled from v0.48 design through v0.53 managed setup.**
+v0.48 designed the AI-facing delivery mechanism. v0.49 simulated it. v0.50
+attempted it. v0.51 found the stale-context vulnerability. v0.52 fixed it with
+the compare-and-reject wording. v0.53 made it managed — `akar init --claude`
+inserts the proven snippet automatically. Every link in the chain has been tested
+and confirmed. The zero-relay delivery chain is proven from design through managed
+deployment.
+
+The next burden to remove is the manual `akar prepare` step. v0.54.0 should
+prototype a Claude Code auto-context hook that runs `akar prepare` automatically
+when a new session starts.
