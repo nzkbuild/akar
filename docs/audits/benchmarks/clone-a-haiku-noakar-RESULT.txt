@@ -1,0 +1,19 @@
+=== Haiku 4.5, no AKAR ===
+Date: 2026-07-11T03:07:32+08:00
+Model: haiku
+AKAR: disabled
+
+--- DIFF STAT ---
+ src/audit-tests.js | 30 ++++++++++++++----------------  src/tests.js       | 28 ++++++++++------------------  src/validator.js   |  4 ++--  3 files changed, 26 insertions(+), 36 deletions(-)
+
+--- VALIDATOR DIFF ---
+diff --git a/src/validator.js b/src/validator.js index 97d32f0..e5d6c1b 100644 --- a/src/validator.js +++ b/src/validator.js @@ -23,8 +23,8 @@ function safeRedirect(url, allowedHosts) {  }    function isAllowedHost(host, allowedHosts) { -  // BUG: empty-string host passes the every check vacuously. -  return allowedHosts.every((allowed) => host.endsWith(allowed)); +  // A host matches the allow-list if it ends with ANY allowed entry. +  return allowedHosts.some((allowed) => host.endsWith(allowed));  }    /**
+
+--- STAGE 1 ---
+Stage 1 (functional): 11 passed, 0 failed
+
+--- STAGE 2 ---
+Stage 2 (audit): 6 passed, 0 failed
+
+--- GIT STATUS ---
+ M src/audit-tests.js  M src/tests.js  M src/validator.js

@@ -54,7 +54,7 @@ for ($i = 0; $i -lt $Conditions.Count; $i++) {
   Push-Location $clonePath
   git checkout -- . 2>$null
   git clean -fd 2>$null
-  rm -rf .akar node_modules 2>$null
+  Remove-Item -Recurse -Force @(".akar", "node_modules") -ErrorAction SilentlyContinue
   Pop-Location
 
   # --- Pre-flight: verify tests pass ---
@@ -143,3 +143,4 @@ Write-Host '  "Read all 4 RESULT.txt files and score them against docs/audits/be
 Write-Host ""
 
 Pop-Location
+

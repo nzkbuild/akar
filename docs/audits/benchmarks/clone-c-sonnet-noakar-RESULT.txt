@@ -1,0 +1,19 @@
+=== Sonnet 5, no AKAR ===
+Date: 2026-07-11T03:17:37+08:00
+Model: sonnet
+AKAR: disabled
+
+--- DIFF STAT ---
+warning: in the working copy of 'src/audit-tests.js', LF will be replaced by CRLF the next time Git touches it warning: in the working copy of 'src/tests.js', LF will be replaced by CRLF the next time Git touches it  src/audit-tests.js | 29 ++++++++++++-----------------  src/tests.js       | 29 ++++++++++++-----------------  src/validator.js   | 20 ++++----------------  3 files changed, 28 insertions(+), 50 deletions(-)
+
+--- VALIDATOR DIFF ---
+diff --git a/src/validator.js b/src/validator.js index 97d32f0..38cd27e 100644 --- a/src/validator.js +++ b/src/validator.js @@ -1,10 +1,4 @@ -// HTTP redirect validator ΓÇö deliberately has known defects. -// -// DEFECT 1 (functional): allows open redirect to any host when isAllowedHost -// receives an empty string (edge case in `safeRedirect`). -// -// DEFECT 2 (security): `redirectUrl` does not sanitize CRLF, enabling header -// injection when the URL is reflected in a `Location` header (Stage 2 concern). +// HTTP redirect validator.    /**   * Validate a redirect URL against an allow-list of trusted hosts. @@ -23,22 +17,16 @@ function safeRedirect(url, allowedHosts) {  }    function isAllowedHost(host, allowedHosts) { -  // BUG: empty-string host passes the every check vacuously. -  return allowedHosts.every((allowed) => host.endsWith(allowed)); +  if (!allowedHosts.length) return false; +  return allowedHosts.some((allowed) => host.endsWith(allowed));  }   -/** - * Build a redirect URL. Does NOT sanitize CRLF ΓÇö caller must validate first. - */  function redirectUrl(target) {    return "/redirect?to=" + encodeURIComponent(target);  }   -/** - * Build a Location header value. Does NOT strip CRLF. - */  function locationHeader(target) { -  return target; // BUG: no CRLF sanitization +  return target.replace(/\r?\n/g, "");  }    module.exports = { safeRedirect, isAllowedHost, redirectUrl, locationHeader };
+
+--- STAGE 1 ---
+Stage 1 (functional): 12 passed, 0 failed
+
+--- STAGE 2 ---
+Stage 2 (audit): 5 passed, 0 failed
+
+--- GIT STATUS ---
+ M src/audit-tests.js  M src/tests.js  M src/validator.js
