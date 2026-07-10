@@ -279,29 +279,34 @@ fn setup_claude_hooks(project_root: &Path, confirmed: bool) -> HookSetupResult {
                 "{{\n  \"hooks\": {{\n    \"UserPromptSubmit\": [\n      {akar_entry}\n    ]\n  }}\n}}\n"
             )
         } else if inner.contains(r#""UserPromptSubmit""#) {
-            // Existing "UserPromptSubmit" array — append our entry.
-            // This is a simplified approach: find the UserPromptSubmit array closing "]"
-            // and insert before the last "]".
-            let ups_pos = inner.rfind(r#""UserPromptSubmit""#).unwrap();
-            let after_ups = &inner[ups_pos..];
-            // Find the array closing bracket.
-            let bracket_pos = after_ups
-                .rfind(']')
-                .map(|p| ups_pos + p)
-                .unwrap_or(inner.len());
-            let before = &existing_text[..bracket_pos];
-            let after = &existing_text[bracket_pos..];
-            format!(
-                "{}{},\n      {}\n    {}",
-                before,
-                if !before.trim_end().ends_with('[') && !before.trim_end().ends_with(',') {
-                    ","
-                } else {
-                    ""
-                },
-                akar_entry,
-                after
-            )
+            // Existing "UserPromptSubmit" array — append our entry before its closing "]".
+            // Use bracket counting from the "[" that opens the array value.
+            let ups_key_pos = existing_text.rfind(r#""UserPromptSubmit""#).unwrap();
+            let after_key = &existing_text[ups_key_pos..];
+            // Find the opening "[" of the array value (after ": ").
+            let array_start = after_key
+                .find('[')
+                .map(|p| ups_key_pos + p)
+                .unwrap_or(existing_text.len());
+            // Count brackets from array_start to find the matching "]".
+            let mut depth = 0;
+            let mut array_end = array_start;
+            for (i, ch) in existing_text[array_start..].char_indices() {
+                match ch {
+                    '[' => depth += 1,
+                    ']' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            array_end = array_start + i;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let before = &existing_text[..array_end];
+            let after = &existing_text[array_end..];
+            format!("{before},\n      {akar_entry}\n    {after}")
         } else {
             // No existing UserPromptSubmit — add it before the final "}".
             format!(

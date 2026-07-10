@@ -185,7 +185,13 @@ fn evaluate(input: &HookInput, cfg: &config::Config) -> HookOutcome {
 
 /// Generate NEXT_RUN.md for the given task.
 fn generate_next_run(cfg: &config::Config, task: &str) {
-    // Write baseline first (needed for prepare-equivalent behavior).
+    // Ensure .akar/ directory exists.
+    let _ = std::fs::create_dir_all(&cfg.akar_dir);
+
+    // Run governor BEFORE writing baseline so it observes a clean tree.
+    let governor = loop_governor::decide(cfg);
+
+    // Write baseline (needed for prepare-equivalent behavior).
     if let Ok(head) = diff_budget::get_head_commit(&cfg.project_root) {
         let tc = contract::classify_prompt(task);
         let baseline = diff_budget::DiffBaseline {
@@ -199,8 +205,7 @@ fn generate_next_run(cfg: &config::Config, task: &str) {
         let _ = diff_budget::write_baseline(&cfg.akar_dir, &baseline);
     }
 
-    // Write NEXT_RUN.md via the governor.
-    let governor = loop_governor::decide(cfg);
+    // Write NEXT_RUN.md with the governor decision from clean state.
     let _ = loop_governor::write_governor_next_run(cfg, &governor, Some(task));
 }
 
