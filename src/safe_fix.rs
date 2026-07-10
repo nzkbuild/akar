@@ -1,7 +1,6 @@
 /// Safe, reversible fixes that the doctor `--fix` mode can apply.
 ///
 /// Every fix that overwrites an existing file backs it up first via `backup::backup_file`.
-
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
@@ -67,7 +66,11 @@ pub fn apply_safe_fix(fix: &SafeFix, template_dir: &Path) -> Result<String, Stri
             // Back up dest if it already exists before overwriting.
             if dest.exists() {
                 crate::backup::backup_file(dest).map_err(|e| {
-                    format!("CreateMissingTemplate: backup failed for {}: {}", dest.display(), e)
+                    format!(
+                        "CreateMissingTemplate: backup failed for {}: {}",
+                        dest.display(),
+                        e
+                    )
                 })?;
             }
 
@@ -91,10 +94,7 @@ pub fn apply_safe_fix(fix: &SafeFix, template_dir: &Path) -> Result<String, Stri
                 )
             })?;
 
-            Ok(format!(
-                "created {} from template",
-                dest.display()
-            ))
+            Ok(format!("created {} from template", dest.display()))
         }
     }
 }

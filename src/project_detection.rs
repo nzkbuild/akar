@@ -154,11 +154,7 @@ mod tests {
     use std::fs;
 
     fn temp_project(label: &str, files: &[&str]) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "akar_pd_{}_{}",
-            label,
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("akar_pd_{}_{}", label, std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         for f in files {

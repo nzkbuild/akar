@@ -1,8 +1,8 @@
 //! Learning Patch v0 — generates local, reviewable learning patch proposals
 //! from postmortem evidence. Does not auto-apply or mutate global config.
 
-use std::path::Path;
 use crate::{config, event_log, postmortem};
+use std::path::Path;
 
 // ---------------------------------------------------------------------------
 // Learning patch lifecycle (v0.14.0)
@@ -187,9 +187,7 @@ pub fn resolve_active_patches(patch_path: &Path, now_iso: &str) -> Option<usize>
                 j += 1;
             }
 
-            let already_resolved = entry_lines
-                .iter()
-                .any(|l| line_has_status(l, "resolved"));
+            let already_resolved = entry_lines.iter().any(|l| line_has_status(l, "resolved"));
 
             if already_resolved {
                 out.extend(entry_lines);
@@ -255,8 +253,14 @@ pub fn resolve_active_patches(patch_path: &Path, now_iso: &str) -> Option<usize>
 pub enum LearnResult {
     NoTelemetry,
     CleanNoAction,
-    PatchProposed { path: std::path::PathBuf, id: String },
-    PatchAppended { path: std::path::PathBuf, id: String },
+    PatchProposed {
+        path: std::path::PathBuf,
+        id: String,
+    },
+    PatchAppended {
+        path: std::path::PathBuf,
+        id: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -280,14 +284,25 @@ pub fn run_learn(cfg: &config::Config) -> LearnResult {
             let id = next_patch_id(&patch_path);
             let patch = build_patch(&id, &report, cfg);
             append_patch(&patch_path, &patch);
-            if patch_path.exists() && std::fs::metadata(&patch_path).map(|m| m.len()).unwrap_or(0) > 0 {
+            if patch_path.exists()
+                && std::fs::metadata(&patch_path).map(|m| m.len()).unwrap_or(0) > 0
+            {
                 if id == "LP-0001" {
-                    LearnResult::PatchProposed { path: patch_path, id }
+                    LearnResult::PatchProposed {
+                        path: patch_path,
+                        id,
+                    }
                 } else {
-                    LearnResult::PatchAppended { path: patch_path, id }
+                    LearnResult::PatchAppended {
+                        path: patch_path,
+                        id,
+                    }
                 }
             } else {
-                LearnResult::PatchProposed { path: patch_path, id }
+                LearnResult::PatchProposed {
+                    path: patch_path,
+                    id,
+                }
             }
         }
     }
@@ -331,8 +346,12 @@ fn build_patch(id: &str, report: &postmortem::PostmortemReport, cfg: &config::Co
 
     let rule = match report.latest_outcome {
         postmortem::Outcome::Failed => "Investigate failure before retrying. Run doctor and eval.",
-        postmortem::Outcome::Degraded => "Check warnings before proceeding. Run doctor if issues persist.",
-        postmortem::Outcome::Unknown => "Ensure telemetry is wired correctly. Run a mission to generate evidence.",
+        postmortem::Outcome::Degraded => {
+            "Check warnings before proceeding. Run doctor if issues persist."
+        }
+        postmortem::Outcome::Unknown => {
+            "Ensure telemetry is wired correctly. Run a mission to generate evidence."
+        }
         postmortem::Outcome::Clean => "No rule needed.",
     };
 
@@ -385,7 +404,11 @@ fn append_patch(patch_path: &Path, content: &str) {
 
     use std::fs::OpenOptions;
     use std::io::Write;
-    if let Ok(mut f) = OpenOptions::new().append(true).create(true).open(patch_path) {
+    if let Ok(mut f) = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(patch_path)
+    {
         let _ = write!(f, "{}{}", header, content);
     }
 }
@@ -405,13 +428,15 @@ pub fn format_learn_result(result: &LearnResult) -> String {
         LearnResult::PatchProposed { path, id } => {
             format!(
                 "learn: patch proposed\n  id:   {}\n  file: {}\n  hint: review and edit before applying\n",
-                id, path.display()
+                id,
+                path.display()
             )
         }
         LearnResult::PatchAppended { path, id } => {
             format!(
                 "learn: patch appended\n  id:   {}\n  file: {}\n  hint: review and edit before applying\n",
-                id, path.display()
+                id,
+                path.display()
             )
         }
     }
@@ -441,12 +466,14 @@ pub fn format_patch_list(patch_path: &Path) -> String {
     ));
     out.push_str(&format!(
         "  governor affected: {}\n",
-        if summary.governor_affected() { "yes" } else { "no" }
+        if summary.governor_affected() {
+            "yes"
+        } else {
+            "no"
+        }
     ));
     if summary.governor_affected() {
-        out.push_str(
-            "  hint: run 'akar learn --resolve' to retire active split-rule entries\n",
-        );
+        out.push_str("  hint: run 'akar learn --resolve' to retire active split-rule entries\n");
     }
     out
 }
@@ -498,7 +525,11 @@ mod tests {
     #[test]
     fn learn_no_patch_for_clean_outcome() {
         let (cfg, dir) = tmp_cfg("clean");
-        write_mission_event(&dir, "success", "mission/done task=Bugfix risk=Low autonomy=A5 warnings=0 prompt=fix btn");
+        write_mission_event(
+            &dir,
+            "success",
+            "mission/done task=Bugfix risk=Low autonomy=A5 warnings=0 prompt=fix btn",
+        );
         let result = run_learn(&cfg);
         assert!(matches!(result, LearnResult::CleanNoAction));
         let _ = fs::remove_dir_all(&dir);
@@ -507,9 +538,16 @@ mod tests {
     #[test]
     fn learn_creates_patch_for_degraded_outcome() {
         let (cfg, dir) = tmp_cfg("degraded");
-        write_mission_event(&dir, "success", "mission/done task=Bugfix risk=Low autonomy=A5 warnings=2 prompt=fix btn");
+        write_mission_event(
+            &dir,
+            "success",
+            "mission/done task=Bugfix risk=Low autonomy=A5 warnings=2 prompt=fix btn",
+        );
         let result = run_learn(&cfg);
-        assert!(matches!(result, LearnResult::PatchProposed { .. } | LearnResult::PatchAppended { .. }));
+        assert!(matches!(
+            result,
+            LearnResult::PatchProposed { .. } | LearnResult::PatchAppended { .. }
+        ));
         let patch_path = dir.join("LEARNING_PATCHES.md");
         assert!(patch_path.exists());
         let content = fs::read_to_string(&patch_path).unwrap();
@@ -521,9 +559,16 @@ mod tests {
     #[test]
     fn learn_creates_patch_for_failed_outcome() {
         let (cfg, dir) = tmp_cfg("failed");
-        write_mission_event(&dir, "failure", "mission/failed task=Feature risk=High autonomy=A5 warnings=3 prompt=bad");
+        write_mission_event(
+            &dir,
+            "failure",
+            "mission/failed task=Feature risk=High autonomy=A5 warnings=3 prompt=bad",
+        );
         let result = run_learn(&cfg);
-        assert!(matches!(result, LearnResult::PatchProposed { .. } | LearnResult::PatchAppended { .. }));
+        assert!(matches!(
+            result,
+            LearnResult::PatchProposed { .. } | LearnResult::PatchAppended { .. }
+        ));
         let content = fs::read_to_string(dir.join("LEARNING_PATCHES.md")).unwrap();
         assert!(content.contains("mission_failure"));
         let _ = fs::remove_dir_all(&dir);
@@ -532,10 +577,19 @@ mod tests {
     #[test]
     fn learn_creates_patch_for_unknown_outcome() {
         let (cfg, dir) = tmp_cfg("unknown");
-        write_mission_event(&dir, "info", "mission/unknown task=Feature risk=Low autonomy=A5 warnings=0 prompt=odd");
+        write_mission_event(
+            &dir,
+            "info",
+            "mission/unknown task=Feature risk=Low autonomy=A5 warnings=0 prompt=odd",
+        );
         let result = run_learn(&cfg);
         // unknown outcome → patch
-        assert!(matches!(result, LearnResult::PatchProposed { .. } | LearnResult::PatchAppended { .. } | LearnResult::CleanNoAction));
+        assert!(matches!(
+            result,
+            LearnResult::PatchProposed { .. }
+                | LearnResult::PatchAppended { .. }
+                | LearnResult::CleanNoAction
+        ));
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -543,9 +597,17 @@ mod tests {
     fn learn_appends_without_overwriting() {
         let (cfg, dir) = tmp_cfg("append");
         // Two failed events → two patches
-        write_mission_event(&dir, "failure", "mission/failed task=Bugfix risk=Low autonomy=A5 warnings=1 prompt=a");
+        write_mission_event(
+            &dir,
+            "failure",
+            "mission/failed task=Bugfix risk=Low autonomy=A5 warnings=1 prompt=a",
+        );
         let _ = run_learn(&cfg);
-        write_mission_event(&dir, "failure", "mission/failed task=Bugfix risk=Low autonomy=A5 warnings=2 prompt=b");
+        write_mission_event(
+            &dir,
+            "failure",
+            "mission/failed task=Bugfix risk=Low autonomy=A5 warnings=2 prompt=b",
+        );
         let _ = run_learn(&cfg);
         let content = fs::read_to_string(dir.join("LEARNING_PATCHES.md")).unwrap();
         assert!(content.contains("LP-0001"));
@@ -556,10 +618,17 @@ mod tests {
     #[test]
     fn learn_redacts_secrets() {
         let (cfg, dir) = tmp_cfg("redact");
-        write_mission_event(&dir, "failure", "mission/failed prompt=token=sk-abc123secret warnings=1");
+        write_mission_event(
+            &dir,
+            "failure",
+            "mission/failed prompt=token=sk-abc123secret warnings=1",
+        );
         let _ = run_learn(&cfg);
         let content = fs::read_to_string(dir.join("LEARNING_PATCHES.md")).unwrap();
-        assert!(!content.contains("sk-abc123"), "secret should be redacted in patch");
+        assert!(
+            !content.contains("sk-abc123"),
+            "secret should be redacted in patch"
+        );
         assert!(content.contains("[REDACTED]"));
         let _ = fs::remove_dir_all(&dir);
     }
@@ -636,10 +705,17 @@ mod tests {
     fn new_exceeded_budget_patch_includes_status_active() {
         // learn.rs build_patch now writes `status: active` for new patches.
         let (cfg, dir) = tmp_cfg("lifecycle_newpatch");
-        write_mission_event(&dir, "failure", "mission/failed task=Bugfix risk=Low autonomy=A5 warnings=1 prompt=a");
+        write_mission_event(
+            &dir,
+            "failure",
+            "mission/failed task=Bugfix risk=Low autonomy=A5 warnings=1 prompt=a",
+        );
         let _ = run_learn(&cfg);
         let content = fs::read_to_string(dir.join("LEARNING_PATCHES.md")).unwrap();
-        assert!(content.contains("- status: active"), "new patch must include status: active");
+        assert!(
+            content.contains("- status: active"),
+            "new patch must include status: active"
+        );
         assert!(!content.contains("- status: proposed"));
         let _ = fs::remove_dir_all(&dir);
     }
@@ -742,7 +818,9 @@ mod tests {
     #[test]
     fn resolve_preserves_file_header_and_comments() {
         let (cfg, dir) = tmp_cfg("lifecycle_resolve_header");
-        let mut content = String::from("# AKAR Learning Patches\n<!-- Append-only. Do not delete entries. -->\n\n");
+        let mut content = String::from(
+            "# AKAR Learning Patches\n<!-- Append-only. Do not delete entries. -->\n\n",
+        );
         content.push_str(&split_rule_body(Some("status: active")));
         write_patches_file(&dir, &content);
         let path = dir.join("LEARNING_PATCHES.md");

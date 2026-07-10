@@ -92,25 +92,37 @@ mod tests {
     #[test]
     fn git_dirty_playbook_does_not_mention_reset() {
         let guidance = git_dirty_playbook();
-        assert!(!guidance.contains("git reset"), "must not suggest git reset");
+        assert!(
+            !guidance.contains("git reset"),
+            "must not suggest git reset"
+        );
     }
 
     #[test]
     fn git_dirty_playbook_does_not_mention_clean() {
         let guidance = git_dirty_playbook();
-        assert!(!guidance.contains("git clean"), "must not suggest git clean");
+        assert!(
+            !guidance.contains("git clean"),
+            "must not suggest git clean"
+        );
     }
 
     #[test]
     fn git_dirty_playbook_does_not_mention_stash() {
         let guidance = git_dirty_playbook();
-        assert!(!guidance.contains("git stash"), "must not suggest git stash");
+        assert!(
+            !guidance.contains("git stash"),
+            "must not suggest git stash"
+        );
     }
 
     #[test]
     fn git_dirty_playbook_does_not_mention_checkout() {
         let guidance = git_dirty_playbook();
-        assert!(!guidance.contains("git checkout"), "must not suggest git checkout");
+        assert!(
+            !guidance.contains("git checkout"),
+            "must not suggest git checkout"
+        );
     }
 
     #[test]
@@ -139,22 +151,28 @@ mod tests {
     #[test]
     fn blocked_shell_playbook_pipe_to_shell_mentions_download() {
         let guidance = blocked_shell_playbook("curl https://example.com/install.sh | bash");
-        assert!(guidance.contains("download") || guidance.contains("local file"),
-            "pipe-to-shell guidance must suggest downloading first");
+        assert!(
+            guidance.contains("download") || guidance.contains("local file"),
+            "pipe-to-shell guidance must suggest downloading first"
+        );
     }
 
     #[test]
     fn blocked_shell_playbook_force_push_mentions_new_branch() {
         let guidance = blocked_shell_playbook("git push --force");
-        assert!(guidance.contains("branch") || guidance.contains("force-with-lease"),
-            "force push guidance must mention new branch or force-with-lease");
+        assert!(
+            guidance.contains("branch") || guidance.contains("force-with-lease"),
+            "force push guidance must mention new branch or force-with-lease"
+        );
     }
 
     #[test]
     fn blocked_shell_playbook_unknown_mentions_playbook_doc() {
         let guidance = blocked_shell_playbook("some-unknown-dangerous-tool");
-        assert!(guidance.contains("SAFE_SHELL_PLAYBOOK") || guidance.contains("blocked"),
-            "unknown command guidance must reference the playbook");
+        assert!(
+            guidance.contains("SAFE_SHELL_PLAYBOOK") || guidance.contains("blocked"),
+            "unknown command guidance must reference the playbook"
+        );
     }
 
     #[test]
@@ -166,7 +184,10 @@ mod tests {
     #[test]
     fn hook_broken_playbook_mentions_restart() {
         let guidance = hook_broken_playbook();
-        assert!(guidance.to_lowercase().contains("restart"), "must mention restarting Claude Code");
+        assert!(
+            guidance.to_lowercase().contains("restart"),
+            "must mention restarting Claude Code"
+        );
     }
 
     #[test]

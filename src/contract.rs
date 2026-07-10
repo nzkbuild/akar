@@ -180,118 +180,110 @@ pub fn classify_prompt(prompt: &str) -> TaskContract {
 
     // Determine task type by priority order (more specific wins first).
     // Security keywords take precedence over generic "add"/"feature" words.
-    let (task_type, risk_level, diff_budget, stop_conditions) =
-        if lower.contains("security")
-            || lower.contains("auth")
-            || lower.contains("password")
-            || lower.contains("token")
-        {
-            (
-                TaskType::Security,
-                RiskLevel::High,
-                DiffBudget::small(),
-                vec![
-                    "no secrets committed".to_string(),
-                    "auth flow still passes".to_string(),
-                    "no regressions in permission checks".to_string(),
-                ],
-            )
-        } else if lower.contains("migrate")
-            || lower.contains("migration")
-            || lower.contains("schema")
-        {
-            (
-                TaskType::Migration,
-                RiskLevel::High,
-                DiffBudget::large(),
-                vec![
-                    "migration is reversible".to_string(),
-                    "data integrity verified".to_string(),
-                    "rollback plan documented".to_string(),
-                ],
-            )
-        } else if lower.contains("dependency")
-            || lower.contains("package")
-            || lower.contains("install")
-        {
-            (
-                TaskType::Dependency,
-                RiskLevel::Medium,
-                DiffBudget::small(),
-                vec![
-                    "no breaking version conflicts".to_string(),
-                    "lockfile updated".to_string(),
-                ],
-            )
-        } else if lower.contains("fix")
-            || lower.contains("bug")
-            || lower.contains("error")
-            || lower.contains("broken")
-        {
-            (
-                TaskType::Bugfix,
-                RiskLevel::Low,
-                DiffBudget::micro(),
-                vec![
-                    "original symptom no longer reproducible".to_string(),
-                    "tests pass".to_string(),
-                ],
-            )
-        } else if lower.contains("ui")
-            || lower.contains("frontend")
-            || lower.contains("design")
-            || lower.contains("style")
-            || lower.contains("css")
-        {
-            (
-                TaskType::Frontend,
-                RiskLevel::Low,
-                DiffBudget::medium(),
-                vec![
-                    "visual regression check done".to_string(),
-                    "responsive layout verified".to_string(),
-                ],
-            )
-        } else if lower.contains("refactor")
-            || lower.contains("clean")
-            || lower.contains("restructure")
-        {
-            (
-                TaskType::Refactor,
-                RiskLevel::Medium,
-                DiffBudget::medium(),
-                vec![
-                    "behaviour unchanged".to_string(),
-                    "tests pass".to_string(),
-                    "no public API changes".to_string(),
-                ],
-            )
-        } else if lower.contains("add")
-            || lower.contains("feature")
-            || lower.contains("implement")
-            || lower.contains("create")
-        {
-            (
-                TaskType::Feature,
-                RiskLevel::Low,
-                DiffBudget::medium(),
-                vec![
-                    "feature works end-to-end".to_string(),
-                    "tests added".to_string(),
-                ],
-            )
-        } else {
-            // Default
-            (
-                TaskType::Feature,
-                RiskLevel::Low,
-                DiffBudget::medium(),
-                vec![
-                    "feature works end-to-end".to_string(),
-                    "tests added".to_string(),
-                ],
-            )
-        };
+    let (task_type, risk_level, diff_budget, stop_conditions) = if lower.contains("security")
+        || lower.contains("auth")
+        || lower.contains("password")
+        || lower.contains("token")
+    {
+        (
+            TaskType::Security,
+            RiskLevel::High,
+            DiffBudget::small(),
+            vec![
+                "no secrets committed".to_string(),
+                "auth flow still passes".to_string(),
+                "no regressions in permission checks".to_string(),
+            ],
+        )
+    } else if lower.contains("migrate") || lower.contains("migration") || lower.contains("schema") {
+        (
+            TaskType::Migration,
+            RiskLevel::High,
+            DiffBudget::large(),
+            vec![
+                "migration is reversible".to_string(),
+                "data integrity verified".to_string(),
+                "rollback plan documented".to_string(),
+            ],
+        )
+    } else if lower.contains("dependency") || lower.contains("package") || lower.contains("install")
+    {
+        (
+            TaskType::Dependency,
+            RiskLevel::Medium,
+            DiffBudget::small(),
+            vec![
+                "no breaking version conflicts".to_string(),
+                "lockfile updated".to_string(),
+            ],
+        )
+    } else if lower.contains("fix")
+        || lower.contains("bug")
+        || lower.contains("error")
+        || lower.contains("broken")
+    {
+        (
+            TaskType::Bugfix,
+            RiskLevel::Low,
+            DiffBudget::micro(),
+            vec![
+                "original symptom no longer reproducible".to_string(),
+                "tests pass".to_string(),
+            ],
+        )
+    } else if lower.contains("ui")
+        || lower.contains("frontend")
+        || lower.contains("design")
+        || lower.contains("style")
+        || lower.contains("css")
+    {
+        (
+            TaskType::Frontend,
+            RiskLevel::Low,
+            DiffBudget::medium(),
+            vec![
+                "visual regression check done".to_string(),
+                "responsive layout verified".to_string(),
+            ],
+        )
+    } else if lower.contains("refactor") || lower.contains("clean") || lower.contains("restructure")
+    {
+        (
+            TaskType::Refactor,
+            RiskLevel::Medium,
+            DiffBudget::medium(),
+            vec![
+                "behaviour unchanged".to_string(),
+                "tests pass".to_string(),
+                "no public API changes".to_string(),
+            ],
+        )
+    } else if lower.contains("add")
+        || lower.contains("feature")
+        || lower.contains("implement")
+        || lower.contains("create")
+    {
+        (
+            TaskType::Feature,
+            RiskLevel::Low,
+            DiffBudget::medium(),
+            vec![
+                "feature works end-to-end".to_string(),
+                "tests added".to_string(),
+            ],
+        )
+    } else {
+        // Default
+        (
+            TaskType::Feature,
+            RiskLevel::Low,
+            DiffBudget::medium(),
+            vec![
+                "feature works end-to-end".to_string(),
+                "tests added".to_string(),
+            ],
+        )
+    };
 
     let inferred_goal = infer_goal(&task_type, prompt);
     let verification_commands = default_verification(&task_type);
@@ -362,9 +354,21 @@ pub fn format_contract(contract: &TaskContract) -> String {
         budget.files_max,
         budget.loc_min,
         budget.loc_max,
-        if budget.new_files_allowed { ", new-files:yes" } else { "" },
-        if budget.dependencies_allowed { ", deps:yes" } else { "" },
-        if budget.migrations_allowed { ", migrations:yes" } else { "" },
+        if budget.new_files_allowed {
+            ", new-files:yes"
+        } else {
+            ""
+        },
+        if budget.dependencies_allowed {
+            ", deps:yes"
+        } else {
+            ""
+        },
+        if budget.migrations_allowed {
+            ", migrations:yes"
+        } else {
+            ""
+        },
     );
 
     let stop = contract.stop_conditions.join("; ");
@@ -382,7 +386,11 @@ pub fn format_contract(contract: &TaskContract) -> String {
         budget_str,
         stop,
         verify,
-        if contract.memory_update_allowed { "allowed" } else { "locked" },
+        if contract.memory_update_allowed {
+            "allowed"
+        } else {
+            "locked"
+        },
     )
 }
 
@@ -516,7 +524,10 @@ mod tests {
         let c = classify_prompt("fix the login button");
         let s = format_contract(&c);
         assert!(s.contains("Bugfix"), "should mention task type");
-        assert!(s.contains("fix the login button"), "should include user intent");
+        assert!(
+            s.contains("fix the login button"),
+            "should include user intent"
+        );
         assert!(s.contains("A5"), "should mention autonomy level");
     }
 }

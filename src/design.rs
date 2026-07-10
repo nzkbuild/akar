@@ -47,7 +47,10 @@ pub fn check_project(project_root: &Path) -> DesignReport {
         });
     }
 
-    DesignReport { issues, has_design_dna }
+    DesignReport {
+        issues,
+        has_design_dna,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -69,7 +72,10 @@ pub fn format_design_report(report: &DesignReport) -> String {
     let n = report.issues.len();
     let mut lines = vec![format!("design: {} issue(s)", n)];
     for issue in &report.issues {
-        lines.push(format!("  [{}] {}: {}", issue.severity, issue.check, issue.message));
+        lines.push(format!(
+            "  [{}] {}: {}",
+            issue.severity, issue.check, issue.message
+        ));
     }
     lines.push(dna_line);
     lines.join("\n")
@@ -113,7 +119,10 @@ mod tests {
             "has_design_dna should be false for empty temp dir"
         );
         assert!(
-            report.issues.iter().any(|i| i.check == "design_dna_missing"),
+            report
+                .issues
+                .iter()
+                .any(|i| i.check == "design_dna_missing"),
             "expected design_dna_missing warning, got: {:?}",
             report.issues
         );

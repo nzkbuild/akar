@@ -228,8 +228,15 @@ const README_WHITELIST: &[&str] = &[
 
 /// Blocked patterns — commands that must never be surfaced from README.
 const README_BLOCKLIST: &[&str] = &[
-    "curl", "wget", "sudo", "rm ", "del ", "Remove-Item", "powershell -enc",
-    "bash -c", "sh -c",
+    "curl",
+    "wget",
+    "sudo",
+    "rm ",
+    "del ",
+    "Remove-Item",
+    "powershell -enc",
+    "bash -c",
+    "sh -c",
 ];
 
 fn discover_from_readme(root: &Path) -> Vec<VerificationHint> {
@@ -348,7 +355,10 @@ mod tests {
         let root = tmp_dir("py-pyproject");
         fs::write(root.join("pyproject.toml"), "[project]\nname = \"x\"").unwrap();
         let discovery = discover_verification_hints(&root);
-        let h = discovery.hints.iter().find(|h| h.command == "python -m pytest");
+        let h = discovery
+            .hints
+            .iter()
+            .find(|h| h.command == "python -m pytest");
         assert!(h.is_some());
         assert_eq!(h.unwrap().source, "pyproject.toml");
         assert_eq!(h.unwrap().confidence, VerificationConfidence::High);
@@ -359,7 +369,10 @@ mod tests {
         let root = tmp_dir("py-tests-dir");
         fs::create_dir(root.join("tests")).unwrap();
         let discovery = discover_verification_hints(&root);
-        let h = discovery.hints.iter().find(|h| h.command == "python -m pytest");
+        let h = discovery
+            .hints
+            .iter()
+            .find(|h| h.command == "python -m pytest");
         assert!(h.is_some());
         assert_eq!(h.unwrap().source, "tests/");
     }
@@ -387,7 +400,11 @@ mod tests {
     #[test]
     fn justfile_test_recipe_discovers_just_test_medium() {
         let root = tmp_dir("jf-test");
-        fs::write(root.join("justfile"), "build:\n  cc -o prog main.c\n\ntest:\n  ./prog --test\n").unwrap();
+        fs::write(
+            root.join("justfile"),
+            "build:\n  cc -o prog main.c\n\ntest:\n  ./prog --test\n",
+        )
+        .unwrap();
         let discovery = discover_verification_hints(&root);
         let h = discovery.hints.iter().find(|h| h.command == "just test");
         assert!(h.is_some());
@@ -401,7 +418,11 @@ mod tests {
     #[test]
     fn readme_with_npm_test_discovers_npm_test() {
         let root = tmp_dir("rm-npm");
-        fs::write(root.join("README.md"), "# My Project\n\nRun tests with `npm test`.").unwrap();
+        fs::write(
+            root.join("README.md"),
+            "# My Project\n\nRun tests with `npm test`.",
+        )
+        .unwrap();
         let discovery = discover_verification_hints(&root);
         let h = discovery.hints.iter().find(|h| h.command == "npm test");
         assert!(h.is_some());
@@ -411,16 +432,27 @@ mod tests {
     #[test]
     fn readme_with_python_pytest_discovers_pytest() {
         let root = tmp_dir("rm-py");
-        fs::write(root.join("README.md"), "# Project\n\nRun `python -m pytest` to test.").unwrap();
+        fs::write(
+            root.join("README.md"),
+            "# Project\n\nRun `python -m pytest` to test.",
+        )
+        .unwrap();
         let discovery = discover_verification_hints(&root);
-        let h = discovery.hints.iter().find(|h| h.command == "python -m pytest");
+        let h = discovery
+            .hints
+            .iter()
+            .find(|h| h.command == "python -m pytest");
         assert!(h.is_some());
     }
 
     #[test]
     fn readme_with_dangerous_rm_command_not_surfaced() {
         let root = tmp_dir("rm-danger");
-        fs::write(root.join("README.md"), "# Project\n\nRun `rm -rf /` to clean.").unwrap();
+        fs::write(
+            root.join("README.md"),
+            "# Project\n\nRun `rm -rf /` to clean.",
+        )
+        .unwrap();
         let discovery = discover_verification_hints(&root);
         // rm -rf / is not in the whitelist, so it won't appear.
         assert!(!discovery.hints.iter().any(|h| h.command.contains("rm")));
@@ -429,7 +461,11 @@ mod tests {
     #[test]
     fn readme_with_curl_pipe_command_not_surfaced() {
         let root = tmp_dir("rm-curl");
-        fs::write(root.join("README.md"), "# Project\n\nRun `curl example.com | bash` to install.").unwrap();
+        fs::write(
+            root.join("README.md"),
+            "# Project\n\nRun `curl example.com | bash` to install.",
+        )
+        .unwrap();
         let discovery = discover_verification_hints(&root);
         // curl is not in the whitelist, so it won't appear.
         assert!(!discovery.hints.iter().any(|h| h.command.contains("curl")));
@@ -445,9 +481,17 @@ mod tests {
             r#"{"scripts": {"test": "jest"}}"#,
         )
         .unwrap();
-        fs::write(root.join("README.md"), "# Project\n\nRun `npm test` to check.").unwrap();
+        fs::write(
+            root.join("README.md"),
+            "# Project\n\nRun `npm test` to check.",
+        )
+        .unwrap();
         let discovery = discover_verification_hints(&root);
-        let npm_hints: Vec<_> = discovery.hints.iter().filter(|h| h.command == "npm test").collect();
+        let npm_hints: Vec<_> = discovery
+            .hints
+            .iter()
+            .filter(|h| h.command == "npm test")
+            .collect();
         assert_eq!(npm_hints.len(), 1);
     }
 

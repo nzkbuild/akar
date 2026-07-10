@@ -23,11 +23,11 @@ pub enum PressureMode {
 impl PressureMode {
     pub fn as_str(&self) -> &'static str {
         match self {
-            PressureMode::Normal   => "NORMAL",
-            PressureMode::Saver    => "SAVER",
-            PressureMode::Compact  => "COMPACT",
+            PressureMode::Normal => "NORMAL",
+            PressureMode::Saver => "SAVER",
+            PressureMode::Compact => "COMPACT",
             PressureMode::Boundary => "BOUNDARY",
-            PressureMode::Resume   => "RESUME",
+            PressureMode::Resume => "RESUME",
         }
     }
 }
@@ -60,7 +60,11 @@ pub struct RequestSignals {
 impl RequestSignals {
     #[allow(dead_code)]
     pub fn empty() -> Self {
-        RequestSignals { used: None, limit: None, prompt: None }
+        RequestSignals {
+            used: None,
+            limit: None,
+            prompt: None,
+        }
     }
 }
 
@@ -84,7 +88,12 @@ pub fn build_advisory(cfg: &config::Config, signals: &RequestSignals) -> Request
     let strategy = strategy_for_mode(&mode);
     let next_action = next_action_for_mode(&mode, outcome);
 
-    RequestAdvisory { mode, reason, strategy, next_action }
+    RequestAdvisory {
+        mode,
+        reason,
+        strategy,
+        next_action,
+    }
 }
 
 fn determine_mode(
@@ -101,10 +110,18 @@ fn determine_mode(
             return PressureMode::Normal;
         }
         let ratio = used as f64 / limit as f64;
-        if ratio >= 0.95 { return PressureMode::Resume; }
-        if ratio >= 0.85 { return PressureMode::Boundary; }
-        if ratio >= 0.70 { return PressureMode::Compact; }
-        if ratio >= 0.50 { return PressureMode::Saver; }
+        if ratio >= 0.95 {
+            return PressureMode::Resume;
+        }
+        if ratio >= 0.85 {
+            return PressureMode::Boundary;
+        }
+        if ratio >= 0.70 {
+            return PressureMode::Compact;
+        }
+        if ratio >= 0.50 {
+            return PressureMode::Saver;
+        }
     }
     PressureMode::Normal
 }
@@ -117,19 +134,27 @@ fn build_reason(
     has_patches: bool,
 ) -> String {
     if let (Some(used), Some(limit)) = (signals.used, signals.limit) {
-        return format!("{}/{} requests used ({:.0}%)", used, limit,
-            used as f64 / limit.max(1) as f64 * 100.0);
+        return format!(
+            "{}/{} requests used ({:.0}%)",
+            used,
+            limit,
+            used as f64 / limit.max(1) as f64 * 100.0
+        );
     }
     let mut parts = Vec::new();
     parts.push(format!("{} telemetry events recorded", event_count));
     match outcome {
-        postmortem::Outcome::Clean   => parts.push("last mission clean".to_string()),
+        postmortem::Outcome::Clean => parts.push("last mission clean".to_string()),
         postmortem::Outcome::Degraded => parts.push("last mission degraded".to_string()),
-        postmortem::Outcome::Failed   => parts.push("last mission failed".to_string()),
-        postmortem::Outcome::Unknown  => parts.push("outcome unknown".to_string()),
+        postmortem::Outcome::Failed => parts.push("last mission failed".to_string()),
+        postmortem::Outcome::Unknown => parts.push("outcome unknown".to_string()),
     }
-    if has_failures { parts.push("warnings detected".to_string()); }
-    if has_patches  { parts.push("learning patches exist".to_string()); }
+    if has_failures {
+        parts.push("warnings detected".to_string());
+    }
+    if has_patches {
+        parts.push("learning patches exist".to_string());
+    }
     parts.join(", ")
 }
 
@@ -166,9 +191,9 @@ fn strategy_for_mode(mode: &PressureMode) -> Vec<String> {
 
 fn next_action_for_mode(mode: &PressureMode, outcome: &postmortem::Outcome) -> String {
     match mode {
-        PressureMode::Normal   => "continue with current task".to_string(),
-        PressureMode::Saver    => "continue but reduce context reads".to_string(),
-        PressureMode::Compact  => {
+        PressureMode::Normal => "continue with current task".to_string(),
+        PressureMode::Saver => "continue but reduce context reads".to_string(),
+        PressureMode::Compact => {
             if matches!(outcome, postmortem::Outcome::Failed) {
                 "run 'akar doctor' then continue with compact context".to_string()
             } else {
@@ -176,7 +201,9 @@ fn next_action_for_mode(mode: &PressureMode, outcome: &postmortem::Outcome) -> S
             }
         }
         PressureMode::Boundary => "complete current step, run 'akar verify', then stop".to_string(),
-        PressureMode::Resume   => "run `akar request` to write .akar/NEXT_RUN.md, then stop cleanly".to_string(),
+        PressureMode::Resume => {
+            "run `akar request` to write .akar/NEXT_RUN.md, then stop cleanly".to_string()
+        }
     }
 }
 
@@ -234,7 +261,11 @@ mod tests {
     #[test]
     fn saver_mode_at_50_percent() {
         let cfg = clean_cfg();
-        let signals = RequestSignals { used: Some(500), limit: Some(1000), prompt: None };
+        let signals = RequestSignals {
+            used: Some(500),
+            limit: Some(1000),
+            prompt: None,
+        };
         let advisory = build_advisory(&cfg, &signals);
         assert_eq!(advisory.mode, PressureMode::Saver);
     }
@@ -242,7 +273,11 @@ mod tests {
     #[test]
     fn compact_mode_at_70_percent() {
         let cfg = clean_cfg();
-        let signals = RequestSignals { used: Some(700), limit: Some(1000), prompt: None };
+        let signals = RequestSignals {
+            used: Some(700),
+            limit: Some(1000),
+            prompt: None,
+        };
         let advisory = build_advisory(&cfg, &signals);
         assert_eq!(advisory.mode, PressureMode::Compact);
     }
@@ -250,7 +285,11 @@ mod tests {
     #[test]
     fn boundary_mode_at_85_percent() {
         let cfg = clean_cfg();
-        let signals = RequestSignals { used: Some(850), limit: Some(1000), prompt: None };
+        let signals = RequestSignals {
+            used: Some(850),
+            limit: Some(1000),
+            prompt: None,
+        };
         let advisory = build_advisory(&cfg, &signals);
         assert_eq!(advisory.mode, PressureMode::Boundary);
     }
@@ -258,7 +297,11 @@ mod tests {
     #[test]
     fn resume_mode_at_95_percent() {
         let cfg = clean_cfg();
-        let signals = RequestSignals { used: Some(950), limit: Some(1000), prompt: None };
+        let signals = RequestSignals {
+            used: Some(950),
+            limit: Some(1000),
+            prompt: None,
+        };
         let advisory = build_advisory(&cfg, &signals);
         assert_eq!(advisory.mode, PressureMode::Resume);
         // Resume pressure must surface a stop-and-hand-off strategy.

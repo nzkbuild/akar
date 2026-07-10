@@ -5,7 +5,10 @@
 //! `_smoke` — they are regression smoke checks, not behavior proofs; the
 //! detail string says so explicitly.
 
-use crate::{backup, config, context_pack, contract, design, doctor, event_log, request_intelligence, safety, skill_registry, verify, workflow};
+use crate::{
+    backup, config, context_pack, contract, design, doctor, event_log, request_intelligence,
+    safety, skill_registry, verify, workflow,
+};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -202,18 +205,11 @@ pub fn run_evals(cfg: &config::Config) -> EvalSuite {
     // 13. verify_recipe_detect
     {
         let recipe = verify::detect_recipe(&cfg.project_root);
-        let has_cargo = recipe
-            .commands
-            .iter()
-            .any(|c| c.command == "cargo");
+        let has_cargo = recipe.commands.iter().any(|c| c.command == "cargo");
         results.push(eval(
             "verify_recipe_detect",
             has_cargo,
-            &format!(
-                "{} command(s), cargo={}",
-                recipe.commands.len(),
-                has_cargo
-            ),
+            &format!("{} command(s), cargo={}", recipe.commands.len(), has_cargo),
         ));
     }
 
@@ -285,7 +281,10 @@ pub fn run_evals(cfg: &config::Config) -> EvalSuite {
         let issues_consistent = if dna_exists {
             report.issues.is_empty()
         } else {
-            report.issues.iter().any(|i| i.check == "design_dna_missing")
+            report
+                .issues
+                .iter()
+                .any(|i| i.check == "design_dna_missing")
         };
         let passed = flag_matches && issues_consistent;
         results.push(eval(
@@ -293,7 +292,9 @@ pub fn run_evals(cfg: &config::Config) -> EvalSuite {
             passed,
             &format!(
                 "has_design_dna={} dna_exists={} issues={} (flag matches reality)",
-                report.has_design_dna, dna_exists, report.issues.len()
+                report.has_design_dna,
+                dna_exists,
+                report.issues.len()
             ),
         ));
     }
@@ -519,7 +520,10 @@ pub fn run_evals(cfg: &config::Config) -> EvalSuite {
         results.push(eval(
             "claimed_complete_requires_verification",
             passed,
-            &format!("{} verification command(s) in recipe", recipe.commands.len()),
+            &format!(
+                "{} verification command(s) in recipe",
+                recipe.commands.len()
+            ),
         ));
     }
 
@@ -561,15 +565,22 @@ pub fn run_evals(cfg: &config::Config) -> EvalSuite {
         results.push(eval(
             "stable_runtime_workflow",
             passed,
-            &format!("mission={} preflight_ok={}", r.mission_state, !r.preflight.recommendation.is_empty()),
+            &format!(
+                "mission={} preflight_ok={}",
+                r.mission_state,
+                !r.preflight.recommendation.is_empty()
+            ),
         ));
     }
 
     // 27. high_risk_preflight_blocks_execution
     {
-        let r = workflow::run_workflow("delete all auth tokens from production db", cfg, None, None);
+        let r =
+            workflow::run_workflow("delete all auth tokens from production db", cfg, None, None);
         let high_risk = r.preflight.risk == "High" || r.preflight.risk == "Critical";
-        let scaffold_only = r.mission_state.contains("Done") || r.mission_state.contains("scaffold") || r.mission_state.contains("skipped");
+        let scaffold_only = r.mission_state.contains("Done")
+            || r.mission_state.contains("scaffold")
+            || r.mission_state.contains("skipped");
         let passed = high_risk && scaffold_only;
         results.push(eval(
             "high_risk_preflight_blocks_execution",
@@ -661,8 +672,14 @@ mod tests {
         let cfg = config::Config::discover();
         let suite = run_evals(&cfg);
         let report = format_eval_report(&suite);
-        assert!(report.contains("overall:"), "report missing 'overall:' line");
-        assert!(report.contains("eval:"), "report missing 'eval:' summary line");
+        assert!(
+            report.contains("overall:"),
+            "report missing 'overall:' line"
+        );
+        assert!(
+            report.contains("eval:"),
+            "report missing 'eval:' summary line"
+        );
     }
 
     #[test]

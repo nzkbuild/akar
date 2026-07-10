@@ -1,6 +1,6 @@
-use std::path::Path;
 use crate::config;
 use crate::event_log;
+use std::path::Path;
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -72,16 +72,33 @@ pub fn classify_role(name: &str, source: &SkillSource) -> SkillRole {
     if lower.contains("akar") || *source == SkillSource::Project {
         return SkillRole::Kernel;
     }
-    if lower.contains("superpower") || lower.contains("tdd") || lower.contains("plan") || lower.contains("brainstorm") {
+    if lower.contains("superpower")
+        || lower.contains("tdd")
+        || lower.contains("plan")
+        || lower.contains("brainstorm")
+    {
         return SkillRole::Methodology;
     }
-    if lower.contains("gsd") || lower.contains("shit") || lower.contains("dispatch") || lower.contains("execute") {
+    if lower.contains("gsd")
+        || lower.contains("shit")
+        || lower.contains("dispatch")
+        || lower.contains("execute")
+    {
         return SkillRole::Execution;
     }
-    if lower.contains("recall") || lower.contains("memory") || lower.contains("self-evolve") || lower.contains("checkpoint") {
+    if lower.contains("recall")
+        || lower.contains("memory")
+        || lower.contains("self-evolve")
+        || lower.contains("checkpoint")
+    {
         return SkillRole::Memory;
     }
-    if lower.contains("design") || lower.contains("taste") || lower.contains("visual") || lower.contains("ui") || lower.contains("frontend") {
+    if lower.contains("design")
+        || lower.contains("taste")
+        || lower.contains("visual")
+        || lower.contains("ui")
+        || lower.contains("frontend")
+    {
         return SkillRole::Design;
     }
     if lower.contains("security") || lower.contains("review") {
@@ -342,20 +359,20 @@ pub fn build_skill_report(skills: &[SkillEntry]) -> SkillReport {
 
     for s in skills {
         match s.role {
-            SkillRole::Kernel      => kernel_count += 1,
+            SkillRole::Kernel => kernel_count += 1,
             SkillRole::Methodology => {
                 methodology_count += 1;
                 high_influence.push(format!("{} (methodology)", s.name));
             }
-            SkillRole::Execution   => {
+            SkillRole::Execution => {
                 execution_count += 1;
                 high_influence.push(format!("{} (execution)", s.name));
             }
-            SkillRole::Support     => support_count += 1,
-            SkillRole::Memory      => memory_count += 1,
-            SkillRole::Design      => design_count += 1,
-            SkillRole::Security    => security_count += 1,
-            SkillRole::Dangerous   => {
+            SkillRole::Support => support_count += 1,
+            SkillRole::Memory => memory_count += 1,
+            SkillRole::Design => design_count += 1,
+            SkillRole::Security => security_count += 1,
+            SkillRole::Dangerous => {
                 dangerous_count += 1;
                 high_influence.push(format!("{} (dangerous)", s.name));
             }
@@ -367,8 +384,12 @@ pub fn build_skill_report(skills: &[SkillEntry]) -> SkillReport {
     conflicts.extend(check_kernel_priority(skills));
 
     // Warn on active Methodology + active Execution combo (controller conflict).
-    let active_methodology = skills.iter().any(|s| s.role == SkillRole::Methodology && s.status == SkillStatus::Active);
-    let active_execution = skills.iter().any(|s| s.role == SkillRole::Execution && s.status == SkillStatus::Active);
+    let active_methodology = skills
+        .iter()
+        .any(|s| s.role == SkillRole::Methodology && s.status == SkillStatus::Active);
+    let active_execution = skills
+        .iter()
+        .any(|s| s.role == SkillRole::Execution && s.status == SkillStatus::Active);
     if active_methodology && active_execution {
         conflicts.push("warning: both methodology and execution controller skills are active — risk of conflicting directives".to_string());
     }
@@ -428,7 +449,11 @@ pub fn format_skill_report(report: &SkillReport) -> String {
 
 /// Write skill inventory to `.akar/SKILL_INVENTORY.md`. Append-safe.
 /// Never overwrites existing content. Returns path written or None.
-pub fn write_skill_inventory(cfg: &config::Config, skills: &[SkillEntry], report: &SkillReport) -> Option<std::path::PathBuf> {
+pub fn write_skill_inventory(
+    cfg: &config::Config,
+    skills: &[SkillEntry],
+    report: &SkillReport,
+) -> Option<std::path::PathBuf> {
     if !cfg.akar_dir.exists() {
         return None;
     }
@@ -468,7 +493,10 @@ pub fn write_skill_inventory(cfg: &config::Config, skills: &[SkillEntry], report
         }
     }
 
-    content.push_str(&format!("\n## Recommended Mode\n{}\n", report.recommended_mode));
+    content.push_str(&format!(
+        "\n## Recommended Mode\n{}\n",
+        report.recommended_mode
+    ));
 
     std::fs::write(&path, content).ok()?;
     Some(path)
@@ -528,7 +556,12 @@ mod tests {
         assert!(skills.is_empty());
     }
 
-    fn make_skill(name: &str, source: SkillSource, purpose: &str, status: SkillStatus) -> SkillEntry {
+    fn make_skill(
+        name: &str,
+        source: SkillSource,
+        purpose: &str,
+        status: SkillStatus,
+    ) -> SkillEntry {
         let role = classify_role(name, &source);
         SkillEntry {
             name: name.to_string(),
@@ -548,67 +581,126 @@ mod tests {
 
     #[test]
     fn classify_role_kernel_by_name() {
-        assert_eq!(classify_role("akar-doctor", &SkillSource::Custom), SkillRole::Kernel);
+        assert_eq!(
+            classify_role("akar-doctor", &SkillSource::Custom),
+            SkillRole::Kernel
+        );
     }
 
     #[test]
     fn classify_role_kernel_by_source() {
-        assert_eq!(classify_role("anything", &SkillSource::Project), SkillRole::Kernel);
+        assert_eq!(
+            classify_role("anything", &SkillSource::Project),
+            SkillRole::Kernel
+        );
     }
 
     #[test]
     fn classify_role_methodology() {
-        assert_eq!(classify_role("superpower-tdd", &SkillSource::Superpower), SkillRole::Methodology);
-        assert_eq!(classify_role("writing-plans", &SkillSource::Custom), SkillRole::Methodology);
+        assert_eq!(
+            classify_role("superpower-tdd", &SkillSource::Superpower),
+            SkillRole::Methodology
+        );
+        assert_eq!(
+            classify_role("writing-plans", &SkillSource::Custom),
+            SkillRole::Methodology
+        );
     }
 
     #[test]
     fn classify_role_memory() {
-        assert_eq!(classify_role("recall", &SkillSource::Custom), SkillRole::Memory);
-        assert_eq!(classify_role("memory-maintain", &SkillSource::Custom), SkillRole::Memory);
+        assert_eq!(
+            classify_role("recall", &SkillSource::Custom),
+            SkillRole::Memory
+        );
+        assert_eq!(
+            classify_role("memory-maintain", &SkillSource::Custom),
+            SkillRole::Memory
+        );
     }
 
     #[test]
     fn classify_role_support_default() {
-        assert_eq!(classify_role("some-random-tool", &SkillSource::Custom), SkillRole::Support);
+        assert_eq!(
+            classify_role("some-random-tool", &SkillSource::Custom),
+            SkillRole::Support
+        );
     }
 
     #[test]
     fn detect_skill_conflicts_methodology_conflict() {
         let skills = vec![
-            make_skill("superpower-foo", SkillSource::Superpower, "", SkillStatus::Active),
+            make_skill(
+                "superpower-foo",
+                SkillSource::Superpower,
+                "",
+                SkillStatus::Active,
+            ),
             make_skill("plan-bar", SkillSource::Custom, "", SkillStatus::Active),
         ];
         let conflicts = detect_skill_conflicts(&skills);
-        assert!(!conflicts.is_empty(), "two active Methodology skills should conflict");
+        assert!(
+            !conflicts.is_empty(),
+            "two active Methodology skills should conflict"
+        );
     }
 
     #[test]
     fn detect_skill_conflicts_dangerous_active() {
-        let skills = vec![
-            make_skill("dangerous-tool", SkillSource::Custom, "", SkillStatus::Active),
-        ];
+        let skills = vec![make_skill(
+            "dangerous-tool",
+            SkillSource::Custom,
+            "",
+            SkillStatus::Active,
+        )];
         let conflicts = detect_skill_conflicts(&skills);
-        assert!(!conflicts.is_empty(), "active Dangerous skill should conflict");
+        assert!(
+            !conflicts.is_empty(),
+            "active Dangerous skill should conflict"
+        );
     }
 
     #[test]
     fn detect_skill_conflicts_no_conflict_clean() {
         let skills = vec![
-            make_skill("superpower-foo", SkillSource::Superpower, "", SkillStatus::Active),
+            make_skill(
+                "superpower-foo",
+                SkillSource::Superpower,
+                "",
+                SkillStatus::Active,
+            ),
             make_skill("recall", SkillSource::Custom, "", SkillStatus::Active),
         ];
         let conflicts = detect_skill_conflicts(&skills);
         // One Methodology + one Memory — no conflict expected
-        assert!(conflicts.is_empty(), "no conflict expected, got: {:?}", conflicts);
+        assert!(
+            conflicts.is_empty(),
+            "no conflict expected, got: {:?}",
+            conflicts
+        );
     }
 
     #[test]
     fn check_kernel_priority_warns_on_conflicting_names() {
         let skills = vec![
-            make_skill("custom-doctor", SkillSource::Custom, "health check", SkillStatus::Active),
-            make_skill("my-verify", SkillSource::Superpower, "verify stuff", SkillStatus::Active),
-            make_skill("akar-mission", SkillSource::Project, "run mission", SkillStatus::Active),
+            make_skill(
+                "custom-doctor",
+                SkillSource::Custom,
+                "health check",
+                SkillStatus::Active,
+            ),
+            make_skill(
+                "my-verify",
+                SkillSource::Superpower,
+                "verify stuff",
+                SkillStatus::Active,
+            ),
+            make_skill(
+                "akar-mission",
+                SkillSource::Project,
+                "run mission",
+                SkillStatus::Active,
+            ),
         ];
 
         let warnings = check_kernel_priority(&skills);
@@ -628,7 +720,10 @@ mod tests {
         let has_akar = skills.iter().any(|s| s.name.contains("akar"));
         // If .claude/commands exists in project, we should find akar commands
         if project_root.join(".claude").join("commands").exists() {
-            assert!(has_akar, "expected akar-* commands in project .claude/commands/");
+            assert!(
+                has_akar,
+                "expected akar-* commands in project .claude/commands/"
+            );
         }
     }
 
@@ -662,19 +757,40 @@ mod tests {
     #[test]
     fn detect_superpower_gsd_controller_conflict() {
         let skills = vec![
-            make_skill("superpower-writing-plans", SkillSource::Superpower, "methodology", SkillStatus::Active),
-            make_skill("gsd-dev-preferences", SkillSource::Custom, "execution", SkillStatus::Active),
+            make_skill(
+                "superpower-writing-plans",
+                SkillSource::Superpower,
+                "methodology",
+                SkillStatus::Active,
+            ),
+            make_skill(
+                "gsd-dev-preferences",
+                SkillSource::Custom,
+                "execution",
+                SkillStatus::Active,
+            ),
         ];
         let report = build_skill_report(&skills);
-        assert!(!report.conflicts.is_empty(), "superpower + gsd should conflict");
-        assert!(report.conflicts.iter().any(|c| c.contains("methodology") && c.contains("execution")));
+        assert!(
+            !report.conflicts.is_empty(),
+            "superpower + gsd should conflict"
+        );
+        assert!(
+            report
+                .conflicts
+                .iter()
+                .any(|c| c.contains("methodology") && c.contains("execution"))
+        );
     }
 
     #[test]
     fn build_report_no_conflicts_clean() {
-        let skills = vec![
-            make_skill("akar-doctor", SkillSource::Project, "health check", SkillStatus::Active),
-        ];
+        let skills = vec![make_skill(
+            "akar-doctor",
+            SkillSource::Project,
+            "health check",
+            SkillStatus::Active,
+        )];
         let report = build_skill_report(&skills);
         assert!(report.conflicts.is_empty());
         assert_eq!(report.kernel_count, 1);
@@ -683,8 +799,18 @@ mod tests {
     #[test]
     fn format_skill_report_contains_key_fields() {
         let skills = vec![
-            make_skill("akar-doctor", SkillSource::Project, "health check", SkillStatus::Active),
-            make_skill("superpower-tdd", SkillSource::Superpower, "tdd", SkillStatus::Active),
+            make_skill(
+                "akar-doctor",
+                SkillSource::Project,
+                "health check",
+                SkillStatus::Active,
+            ),
+            make_skill(
+                "superpower-tdd",
+                SkillSource::Superpower,
+                "tdd",
+                SkillStatus::Active,
+            ),
         ];
         let report = build_skill_report(&skills);
         let out = format_skill_report(&report);

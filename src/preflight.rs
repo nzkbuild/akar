@@ -41,12 +41,18 @@ pub fn run_preflight(
     let autonomy = format!("{:?}", tc.autonomy);
     let diff_budget = format!(
         "{}-{} files, {}-{} LOC",
-        tc.diff_budget.files_min, tc.diff_budget.files_max,
-        tc.diff_budget.loc_min, tc.diff_budget.loc_max
+        tc.diff_budget.files_min,
+        tc.diff_budget.files_max,
+        tc.diff_budget.loc_min,
+        tc.diff_budget.loc_max
     );
 
     // 2. Request intelligence
-    let signals = request_intelligence::RequestSignals { used, limit, prompt: None };
+    let signals = request_intelligence::RequestSignals {
+        used,
+        limit,
+        prompt: None,
+    };
     let advisory = request_intelligence::build_advisory(cfg, &signals);
     let request_mode = advisory.mode.as_str().to_string();
 
@@ -59,7 +65,9 @@ pub fn run_preflight(
 
     // 4. Verification recipe
     let recipe = verify::detect_recipe(&cfg.project_root);
-    let mut verification: Vec<String> = recipe.commands.iter()
+    let mut verification: Vec<String> = recipe
+        .commands
+        .iter()
         .map(|c| format!("run: {}", c.name))
         .collect();
     verification.extend(task_specific_checks(&tc));
@@ -74,10 +82,19 @@ pub fn run_preflight(
     // 6. Warnings
     let mut warnings = Vec::new();
     if !skill_report.conflicts.is_empty() {
-        warnings.push(format!("{} skill conflict(s) detected — check 'akar skills'", skill_report.conflicts.len()));
+        warnings.push(format!(
+            "{} skill conflict(s) detected — check 'akar skills'",
+            skill_report.conflicts.len()
+        ));
     }
-    if matches!(advisory.mode, request_intelligence::PressureMode::Boundary | request_intelligence::PressureMode::Resume) {
-        warnings.push(format!("request pressure: {} — complete one atomic step only", request_mode));
+    if matches!(
+        advisory.mode,
+        request_intelligence::PressureMode::Boundary | request_intelligence::PressureMode::Resume
+    ) {
+        warnings.push(format!(
+            "request pressure: {} — complete one atomic step only",
+            request_mode
+        ));
     }
 
     // 7. Recommendation
@@ -115,7 +132,10 @@ fn skill_recommendation_for_task(
     let needs_methodology = matches!(
         tc.task_type,
         contract::TaskType::Feature | contract::TaskType::Greenfield | contract::TaskType::Refactor
-    ) && matches!(tc.risk_level, contract::RiskLevel::Low | contract::RiskLevel::Medium);
+    ) && matches!(
+        tc.risk_level,
+        contract::RiskLevel::Low | contract::RiskLevel::Medium
+    );
 
     // GSD recommended only for execution sprints — never with Superpower.
     let needs_execution = false; // not recommended automatically in v0.1.9
@@ -157,14 +177,18 @@ fn build_recommendation(
     skill_report: &skill_registry::SkillReport,
 ) -> String {
     let pressure_note = match mode {
-        request_intelligence::PressureMode::Normal   => "",
-        request_intelligence::PressureMode::Saver    => " — batch reads, avoid repeated checks",
-        request_intelligence::PressureMode::Compact  => " — compact context only",
+        request_intelligence::PressureMode::Normal => "",
+        request_intelligence::PressureMode::Saver => " — batch reads, avoid repeated checks",
+        request_intelligence::PressureMode::Compact => " — compact context only",
         request_intelligence::PressureMode::Boundary => " — finish ONE atomic step only",
-        request_intelligence::PressureMode::Resume   => " — write NEXT_RUN.md, stop cleanly",
+        request_intelligence::PressureMode::Resume => " — write NEXT_RUN.md, stop cleanly",
     };
 
-    let conflict_note = if skill_report.conflicts.iter().any(|c| c.starts_with("conflict:")) {
+    let conflict_note = if skill_report
+        .conflicts
+        .iter()
+        .any(|c| c.starts_with("conflict:"))
+    {
         " — resolve skill conflicts first"
     } else {
         ""
@@ -172,16 +196,28 @@ fn build_recommendation(
 
     match tc.risk_level {
         contract::RiskLevel::Critical => {
-            format!("STOP — critical risk task. Plan, research, and checkpoint before execution{}{}", pressure_note, conflict_note)
+            format!(
+                "STOP — critical risk task. Plan, research, and checkpoint before execution{}{}",
+                pressure_note, conflict_note
+            )
         }
         contract::RiskLevel::High => {
-            format!("Proceed with caution — high risk. Verify before and after each step{}{}", pressure_note, conflict_note)
+            format!(
+                "Proceed with caution — high risk. Verify before and after each step{}{}",
+                pressure_note, conflict_note
+            )
         }
         contract::RiskLevel::Medium => {
-            format!("Proceed with discipline — follow diff budget and verify{}{}", pressure_note, conflict_note)
+            format!(
+                "Proceed with discipline — follow diff budget and verify{}{}",
+                pressure_note, conflict_note
+            )
         }
         contract::RiskLevel::Low => {
-            format!("Proceed — low risk task. Stay within diff budget{}{}", pressure_note, conflict_note)
+            format!(
+                "Proceed — low risk task. Stay within diff budget{}{}",
+                pressure_note, conflict_note
+            )
         }
     }
 }
@@ -199,7 +235,10 @@ pub fn format_preflight_report(report: &PreflightReport) -> String {
     out.push_str(&format!("  autonomy:     {}\n", report.autonomy));
     out.push_str(&format!("  diff_budget:  {}\n", report.diff_budget));
     out.push_str(&format!("  request_mode: {}\n", report.request_mode));
-    out.push_str(&format!("  skills:       {}\n", report.skill_recommendation));
+    out.push_str(&format!(
+        "  skills:       {}\n",
+        report.skill_recommendation
+    ));
     out.push_str("  verification:\n");
     for v in &report.verification {
         out.push_str(&format!("    - {}\n", v));
@@ -236,18 +275,28 @@ mod tests {
         let r = run_preflight("fix the login button", &cfg, None, None);
         assert_eq!(r.task_type, "Bugfix");
         // diff budget should be small
-        assert!(r.diff_budget.contains("60") || r.diff_budget.contains("200"),
-            "expected small diff budget, got: {}", r.diff_budget);
+        assert!(
+            r.diff_budget.contains("60") || r.diff_budget.contains("200"),
+            "expected small diff budget, got: {}",
+            r.diff_budget
+        );
     }
 
     #[test]
     fn security_preflight_produces_high_risk() {
         let cfg = test_cfg();
         let r = run_preflight("rotate leaked auth token secrets", &cfg, None, None);
-        assert!(r.risk == "High" || r.risk == "Critical",
-            "expected High/Critical risk for security task, got: {}", r.risk);
-        assert!(r.verification.iter().any(|v| v.contains("secret") || v.contains("auth")),
-            "expected security verification checks");
+        assert!(
+            r.risk == "High" || r.risk == "Critical",
+            "expected High/Critical risk for security task, got: {}",
+            r.risk
+        );
+        assert!(
+            r.verification
+                .iter()
+                .any(|v| v.contains("secret") || v.contains("auth")),
+            "expected security verification checks"
+        );
     }
 
     #[test]
@@ -262,10 +311,12 @@ mod tests {
     fn superpower_not_activated_for_simple_bugfix() {
         let cfg = test_cfg();
         let r = run_preflight("fix button spacing", &cfg, None, None);
-        assert!(!r.skill_recommendation.contains("Superpower") ||
-                r.skill_recommendation.contains("library-only") ||
-                r.skill_recommendation.contains("kernel only"),
-            "Superpower should not be activated as controller for simple bugfix");
+        assert!(
+            !r.skill_recommendation.contains("Superpower")
+                || r.skill_recommendation.contains("library-only")
+                || r.skill_recommendation.contains("kernel only"),
+            "Superpower should not be activated as controller for simple bugfix"
+        );
     }
 
     #[test]
@@ -281,9 +332,11 @@ mod tests {
         let cfg = test_cfg();
         let r = run_preflight("implement new feature", &cfg, None, None);
         // skill_recommendation should never say both are active controllers
-        assert!(!r.skill_recommendation.contains("GSD") ||
-                r.skill_recommendation.contains("library-only") ||
-                r.skill_recommendation.contains("kernel only"));
+        assert!(
+            !r.skill_recommendation.contains("GSD")
+                || r.skill_recommendation.contains("library-only")
+                || r.skill_recommendation.contains("kernel only")
+        );
     }
 
     #[test]
@@ -291,20 +344,29 @@ mod tests {
         let cfg = test_cfg();
         let r = run_preflight("fix the bug", &cfg, Some(950), Some(1000));
         assert_eq!(r.request_mode, "RESUME");
-        assert!(r.recommendation.contains("NEXT_RUN") || r.warnings.iter().any(|w| w.contains("request pressure")));
+        assert!(
+            r.recommendation.contains("NEXT_RUN")
+                || r.warnings.iter().any(|w| w.contains("request pressure"))
+        );
     }
 
     #[test]
     fn verification_recommendation_is_nonempty() {
         let cfg = test_cfg();
         let r = run_preflight("fix the login bug", &cfg, None, None);
-        assert!(!r.verification.is_empty(), "verification should always have at least one entry");
+        assert!(
+            !r.verification.is_empty(),
+            "verification should always have at least one entry"
+        );
     }
 
     #[test]
     fn output_redacts_secret_looking_values() {
         let cfg = test_cfg();
         let r = run_preflight("fix token=sk-abc123secretvalue issue", &cfg, None, None);
-        assert!(!r.prompt.contains("sk-abc123"), "secret should be redacted in prompt preview");
+        assert!(
+            !r.prompt.contains("sk-abc123"),
+            "secret should be redacted in prompt preview"
+        );
     }
 }

@@ -128,17 +128,22 @@ pub fn detect_recipe(project_root: &Path) -> VerifyRecipe {
         // Include discovery hints in the manual-checks message for non-Rust projects.
         let discovery = crate::verification_discovery::discover_verification_hints(project_root);
         if !discovery.is_empty() {
-            recipe
-                .manual_checks
-                .insert(0, format!(
+            recipe.manual_checks.insert(
+                0,
+                format!(
                     "no automated verify for {} projects — discovered verification hint(s): {}",
                     kind.label(),
                     discovery.summary
-                ));
+                ),
+            );
         } else {
-            recipe
-                .manual_checks
-                .insert(0, format!("no automated verify for {} projects — use the project-specific test command", kind.label()));
+            recipe.manual_checks.insert(
+                0,
+                format!(
+                    "no automated verify for {} projects — use the project-specific test command",
+                    kind.label()
+                ),
+            );
         }
     }
 
@@ -156,10 +161,7 @@ pub fn classify_failure(output: &str) -> TestFailureClass {
 
     // Environment / missing file indicators take priority over assertion messages
     // because "No such file" can appear in compiler errors alongside other text.
-    if lower.contains("environment")
-        || lower.contains("enoent")
-        || lower.contains("no such file")
-    {
+    if lower.contains("environment") || lower.contains("enoent") || lower.contains("no such file") {
         return TestFailureClass::EnvironmentIssue;
     }
 

@@ -3,7 +3,7 @@
 //! Chains: doctor → preflight → mission → telemetry → postmortem
 //! All in scaffold/report-only mode — does not edit user code.
 
-use crate::{config, doctor, postmortem, preflight, mission, request_intelligence};
+use crate::{config, doctor, mission, postmortem, preflight, request_intelligence};
 
 // ---------------------------------------------------------------------------
 // WorkflowReport
@@ -38,7 +38,10 @@ pub fn run_workflow(
     let doctor_ok = issues.is_empty();
     let doctor_issues: Vec<String> = issues.iter().map(|i| i.message.clone()).collect();
     if !doctor_ok {
-        warnings.push(format!("{} doctor issue(s) — run 'akar doctor --fix'", issues.len()));
+        warnings.push(format!(
+            "{} doctor issue(s) — run 'akar doctor --fix'",
+            issues.len()
+        ));
     }
 
     // 2. Preflight
@@ -48,7 +51,11 @@ pub fn run_workflow(
     }
 
     // 3. Request pressure — if RESUME, stop before mission
-    let signals = request_intelligence::RequestSignals { used, limit, prompt: None };
+    let signals = request_intelligence::RequestSignals {
+        used,
+        limit,
+        prompt: None,
+    };
     let advisory = request_intelligence::build_advisory(cfg, &signals);
     if matches!(advisory.mode, request_intelligence::PressureMode::Resume) {
         warnings.push("request pressure: RESUME — stopping before mission execution".to_string());
@@ -96,7 +103,11 @@ pub fn run_workflow(
 pub fn format_workflow_report(report: &WorkflowReport) -> String {
     let mut out = String::new();
 
-    let overall = if report.warnings.iter().any(|w| w.contains("doctor") || w.contains("conflict") || w.contains("RESUME")) {
+    let overall = if report
+        .warnings
+        .iter()
+        .any(|w| w.contains("doctor") || w.contains("conflict") || w.contains("RESUME"))
+    {
         "DEGRADED"
     } else if report.mission_state.contains("Done") {
         "OK"
@@ -104,7 +115,9 @@ pub fn format_workflow_report(report: &WorkflowReport) -> String {
         "PARTIAL"
     };
 
-    out.push_str("ADVISORY ONLY — `akar run` prints strategy and records telemetry. It does NOT:\n");
+    out.push_str(
+        "ADVISORY ONLY — `akar run` prints strategy and records telemetry. It does NOT:\n",
+    );
     out.push_str("  - execute code\n");
     out.push_str("  - edit files\n");
     out.push_str("  - call models\n");
@@ -113,12 +126,30 @@ pub fn format_workflow_report(report: &WorkflowReport) -> String {
     out.push_str("\n");
     out.push_str(&format!("run: {}\n", overall));
     out.push_str(&format!("  prompt:     {}\n", report.prompt));
-    out.push_str(&format!("  doctor:     {}\n", if report.doctor_ok { "OK" } else { "DEGRADED" }));
-    out.push_str(&format!("  preflight:  {} | {} | {}\n",
-        report.preflight.task_type, report.preflight.risk, report.preflight.request_mode));
-    out.push_str(&format!("  skills:     {}\n", report.preflight.skill_recommendation));
-    out.push_str(&format!("  mission:    {} (scaffold — no code executed)\n", report.mission_state));
-    out.push_str(&format!("  telemetry:  {}\n", if report.telemetry_written { "written" } else { "not written" }));
+    out.push_str(&format!(
+        "  doctor:     {}\n",
+        if report.doctor_ok { "OK" } else { "DEGRADED" }
+    ));
+    out.push_str(&format!(
+        "  preflight:  {} | {} | {}\n",
+        report.preflight.task_type, report.preflight.risk, report.preflight.request_mode
+    ));
+    out.push_str(&format!(
+        "  skills:     {}\n",
+        report.preflight.skill_recommendation
+    ));
+    out.push_str(&format!(
+        "  mission:    {} (scaffold — no code executed)\n",
+        report.mission_state
+    ));
+    out.push_str(&format!(
+        "  telemetry:  {}\n",
+        if report.telemetry_written {
+            "written"
+        } else {
+            "not written"
+        }
+    ));
     out.push_str(&format!("  postmortem: {}\n", report.postmortem_outcome));
 
     if !report.warnings.is_empty() {
@@ -129,8 +160,14 @@ pub fn format_workflow_report(report: &WorkflowReport) -> String {
     }
 
     out.push_str("\nwhat AKAR reported (advisory only):\n");
-    out.push_str(&format!("  - diff budget: {} (not enforced)\n", report.preflight.diff_budget));
-    out.push_str(&format!("  - recommendation: {}\n", report.preflight.recommendation));
+    out.push_str(&format!(
+        "  - diff budget: {} (not enforced)\n",
+        report.preflight.diff_budget
+    ));
+    out.push_str(&format!(
+        "  - recommendation: {}\n",
+        report.preflight.recommendation
+    ));
 
     out.push_str("\nnot done by AKAR:\n");
     out.push_str("  - code execution\n");
@@ -198,11 +235,22 @@ mod tests {
     #[test]
     fn high_risk_prompt_not_unsafe_execution() {
         let cfg = test_cfg();
-        let r = run_workflow("delete all user auth tokens from production", &cfg, None, None);
+        let r = run_workflow(
+            "delete all user auth tokens from production",
+            &cfg,
+            None,
+            None,
+        );
         // Should classify as high risk but NOT execute code
-        assert!(r.preflight.risk == "High" || r.preflight.risk == "Critical" || !r.preflight.risk.is_empty());
-        assert!(r.mission_state.contains("scaffold") || r.mission_state.contains("Done"),
-            "mission should be scaffold-only, not unsafe execution");
+        assert!(
+            r.preflight.risk == "High"
+                || r.preflight.risk == "Critical"
+                || !r.preflight.risk.is_empty()
+        );
+        assert!(
+            r.mission_state.contains("scaffold") || r.mission_state.contains("Done"),
+            "mission should be scaffold-only, not unsafe execution"
+        );
     }
 
     #[test]
@@ -210,8 +258,13 @@ mod tests {
         let cfg = test_cfg();
         let r = run_workflow("fix the login button", &cfg, None, None);
         // skill recommendation should never say "activate all skills"
-        assert!(!r.preflight.skill_recommendation.to_lowercase().contains("activate all"),
-            "should never activate all skills");
+        assert!(
+            !r.preflight
+                .skill_recommendation
+                .to_lowercase()
+                .contains("activate all"),
+            "should never activate all skills"
+        );
     }
 
     #[test]
@@ -232,7 +285,9 @@ mod tests {
     fn resume_pressure_stops_before_mission() {
         let cfg = test_cfg();
         let r = run_workflow("fix the bug", &cfg, Some(950), Some(1000));
-        assert!(r.mission_state.contains("skipped") || r.warnings.iter().any(|w| w.contains("RESUME")));
+        assert!(
+            r.mission_state.contains("skipped") || r.warnings.iter().any(|w| w.contains("RESUME"))
+        );
     }
 
     #[test]

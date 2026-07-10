@@ -58,12 +58,7 @@ fn is_stale(path: &PathBuf) -> bool {
 }
 
 /// Add a file to the list only if it exists on disk.
-fn add_if_exists(
-    files: &mut Vec<ContextFile>,
-    path: PathBuf,
-    tier: ContextTier,
-    reason: &str,
-) {
+fn add_if_exists(files: &mut Vec<ContextFile>, path: PathBuf, tier: ContextTier, reason: &str) {
     if path.exists() {
         let stale = is_stale(&path);
         files.push(ContextFile {
@@ -191,9 +186,21 @@ pub fn format_pack(pack: &ContextPack) -> String {
 
     out.push_str(&format!("context pack: {}\n", pack.project_name));
 
-    let hot_count = pack.files.iter().filter(|f| f.tier == ContextTier::Hot).count();
-    let warm_count = pack.files.iter().filter(|f| f.tier == ContextTier::Warm).count();
-    let cold_count = pack.files.iter().filter(|f| f.tier == ContextTier::Cold).count();
+    let hot_count = pack
+        .files
+        .iter()
+        .filter(|f| f.tier == ContextTier::Hot)
+        .count();
+    let warm_count = pack
+        .files
+        .iter()
+        .filter(|f| f.tier == ContextTier::Warm)
+        .count();
+    let cold_count = pack
+        .files
+        .iter()
+        .filter(|f| f.tier == ContextTier::Cold)
+        .count();
 
     out.push_str(&format!(
         "  tiers: Hot: {}, Warm: {}, Cold: {}\n",
@@ -203,11 +210,7 @@ pub fn format_pack(pack: &ContextPack) -> String {
     out.push_str("  hot files:\n");
     for f in pack.files.iter().filter(|f| f.tier == ContextTier::Hot) {
         let stale_marker = if f.stale { " [stale]" } else { "" };
-        out.push_str(&format!(
-            "    - {}{}\n",
-            f.path.display(),
-            stale_marker
-        ));
+        out.push_str(&format!("    - {}{}\n", f.path.display(), stale_marker));
     }
 
     if !pack.warnings.is_empty() {
@@ -260,9 +263,7 @@ mod tests {
         let cfg = config::Config {
             project_root: std::env::current_dir().unwrap(),
             // Point akar_dir somewhere that definitely doesn't exist
-            akar_dir: std::path::PathBuf::from(
-                "C:\\nonexistent_path_zzzzzz\\.akar",
-            ),
+            akar_dir: std::path::PathBuf::from("C:\\nonexistent_path_zzzzzz\\.akar"),
             global_dir: config::home_dir().join(".claude").join("akar"),
             project_name: "test".to_string(),
         };

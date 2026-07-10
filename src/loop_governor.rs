@@ -18,7 +18,9 @@
 
 use std::path::Path;
 
-use crate::{config, diff_budget, event_log, foundation, learn, project_verification_contract as pvc};
+use crate::{
+    config, diff_budget, event_log, foundation, learn, project_verification_contract as pvc,
+};
 
 // ---------------------------------------------------------------------------
 // Loop decision
@@ -148,7 +150,9 @@ pub fn objective_for_decision(decision: &LoopDecision) -> &'static str {
         LoopDecision::CommitCheckpoint => {
             "Verify and commit completed AKAR work with explicit files only before starting a new baseline."
         }
-        LoopDecision::SplitTask => "Stop the broad task and create one smaller single-purpose prompt.",
+        LoopDecision::SplitTask => {
+            "Stop the broad task and create one smaller single-purpose prompt."
+        }
         LoopDecision::StopHookBroken => {
             "Stop Bash tool work until AKAR is visible in the Claude Code hook subprocess PATH."
         }
@@ -381,8 +385,7 @@ pub fn repeated_blocked_command_in_window(
     // Preserve insertion order of first occurrence within the window for
     // deterministic output.
     let mut order: Vec<String> = Vec::new();
-    let mut counts: std::collections::HashMap<String, usize> =
-        std::collections::HashMap::new();
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for line in recent {
         let decision = json_str(line, "decision").unwrap_or_default();
         if !decision.eq_ignore_ascii_case("BLOCK") {
@@ -479,10 +482,17 @@ pub fn decide(cfg: &config::Config) -> LoopGovernorReport {
     let baseline_present = baseline_path.exists();
     evidence.push(format!(
         ".akar/DIFF_BASELINE.json: {}",
-        if baseline_present { "present" } else { "absent" }
+        if baseline_present {
+            "present"
+        } else {
+            "absent"
+        }
     ));
     let hook_lines = read_jsonl_lines(&hook_log);
-    evidence.push(format!(".akar/HOOK_EVENTS.jsonl: {} event(s)", hook_lines.len()));
+    evidence.push(format!(
+        ".akar/HOOK_EVENTS.jsonl: {} event(s)",
+        hook_lines.len()
+    ));
     let patches_present = patches_path.exists();
     evidence.push(format!(
         ".akar/LEARNING_PATCHES.md: {}",
@@ -523,9 +533,7 @@ pub fn decide(cfg: &config::Config) -> LoopGovernorReport {
     // --- Rule D: an ACTIVE split-rule learning patch entry requires a split. ---
     // Resolved entries are intentionally ignored (v0.14.0 lifecycle).
     if learning_patches_require_split(&patches_path) {
-        evidence.push(
-            "LEARNING_PATCHES.md: active split-rule entry present".to_string(),
-        );
+        evidence.push("LEARNING_PATCHES.md: active split-rule entry present".to_string());
         return LoopGovernorReport {
             decision: LoopDecision::SplitTask,
             reason: "active split-rule entry in LEARNING_PATCHES.md requires reducing scope or splitting the task"
@@ -605,7 +613,10 @@ pub fn format_loop_governor(report: &LoopGovernorReport) -> String {
     out.push_str("  loop governor:\n");
     out.push_str(&format!("    decision:    {}\n", report.decision.as_str()));
     out.push_str(&format!("    reason:      {}\n", report.reason));
-    out.push_str(&format!("    next action: {}\n", indent_continuation(&report.next_action)));
+    out.push_str(&format!(
+        "    next action: {}\n",
+        indent_continuation(&report.next_action)
+    ));
     out.push_str("    evidence used:\n");
     if report.evidence_used.is_empty() {
         out.push_str("      - (none)\n");
@@ -624,8 +635,14 @@ pub fn format_governor_report(report: &LoopGovernorReport) -> String {
     out.push_str("governor:\n");
     out.push_str(&format!("  decision:    {}\n", report.decision.as_str()));
     out.push_str(&format!("  reason:      {}\n", report.reason));
-    out.push_str(&format!("  next action: {}\n", indent_continuation_gov(&report.next_action)));
-    out.push_str(&format!("  suggested prompt: {}\n", one_line(&report.suggested_prompt)));
+    out.push_str(&format!(
+        "  next action: {}\n",
+        indent_continuation_gov(&report.next_action)
+    ));
+    out.push_str(&format!(
+        "  suggested prompt: {}\n",
+        one_line(&report.suggested_prompt)
+    ));
     out.push_str("  evidence used:\n");
     if report.evidence_used.is_empty() {
         out.push_str("    - (none)\n");
@@ -733,7 +750,10 @@ pub fn format_next_run_block(report: &LoopGovernorReport) -> String {
     out.push_str("## Loop Governor Decision\n");
     out.push_str(&format!("- decision: {}\n", report.decision.as_str()));
     out.push_str(&format!("- reason: {}\n", report.reason));
-    out.push_str(&format!("- next action: {}\n", one_line(&report.next_action)));
+    out.push_str(&format!(
+        "- next action: {}\n",
+        one_line(&report.next_action)
+    ));
     out.push_str("## Suggested Next Claude Prompt\n");
     out.push_str(&format!("```\n{}\n```\n", report.suggested_prompt));
     out.push_str("## Evidence Used\n");
@@ -749,7 +769,11 @@ pub fn format_next_run_block(report: &LoopGovernorReport) -> String {
 
 /// Collapse a multi-line string to a single line for compact NEXT_RUN output.
 fn one_line(s: &str) -> String {
-    s.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ")
+    s.lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 // ---------------------------------------------------------------------------
@@ -830,9 +854,15 @@ pub fn compile_next_run_prompt(
     out.push_str(&format!("- project: {}\n", cfg.project_name));
     out.push_str(&format!("- project kind: {}\n", kind.label()));
     out.push_str(&format!("- timestamp: {}\n", ts));
-    out.push_str(&format!("- governor decision: {}\n", report.decision.as_str()));
+    out.push_str(&format!(
+        "- governor decision: {}\n",
+        report.decision.as_str()
+    ));
     out.push_str(&format!("- reason: {}\n", one_line(&report.reason)));
-    out.push_str(&format!("- next action: {}\n", one_line(&report.next_action)));
+    out.push_str(&format!(
+        "- next action: {}\n",
+        one_line(&report.next_action)
+    ));
     if let Some(t) = &task_clean {
         out.push_str(&format!("- requested task: {}\n", t));
     }
@@ -877,7 +907,10 @@ pub fn compile_next_run_prompt(
             }
             DecisionClass::Stop => {
                 out.push_str("- Primary objective: resolve the governor blocker above before attempting any task.\n");
-                out.push_str(&format!("- Requested task after the blocker is resolved: {}\n", t));
+                out.push_str(&format!(
+                    "- Requested task after the blocker is resolved: {}\n",
+                    t
+                ));
             }
         }
     }
@@ -902,7 +935,10 @@ pub fn compile_next_run_prompt(
             && !hint.requires_confirmation
             && !allowed_commands(kind, &report.decision).contains(&hint.command)
         {
-            out.push_str(&format!("- `{}`  *(discovered from {})*\n", hint.command, hint.source));
+            out.push_str(&format!(
+                "- `{}`  *(discovered from {})*\n",
+                hint.command, hint.source
+            ));
         }
     }
     out.push('\n');
@@ -930,12 +966,15 @@ pub fn compile_next_run_prompt(
     // For known projects, include medium/low hints that weren't already in
     // allowed commands.
     for hint in &discovery.hints {
-        let already_in_verification = verification_commands(kind, &report.decision)
-            .contains(&hint.command);
+        let already_in_verification =
+            verification_commands(kind, &report.decision).contains(&hint.command);
         if kind == pvc::ProjectKind::Unknown {
             // For Unknown projects, show all discovered hints with confidence.
             if hint.confidence == pvc::VerificationConfidence::High && !hint.requires_confirmation {
-                out.push_str(&format!("- `{}`  *(High, {})*\n", hint.command, hint.source));
+                out.push_str(&format!(
+                    "- `{}`  *(High, {})*\n",
+                    hint.command, hint.source
+                ));
             } else {
                 out.push_str(&format!(
                     "- Ask the user before running discovered verification command: `{}`  *({}, {})*\n",
@@ -1007,11 +1046,19 @@ fn allowed_command_additions(kind: pvc::ProjectKind, decision: &LoopDecision) ->
             pvc::akar_prefix(kind)
         )],
         LoopDecision::CommitCheckpoint => {
-            vec!["git add <explicit files>".to_string(), "git commit -m \"<message>\"".to_string()]
+            vec![
+                "git add <explicit files>".to_string(),
+                "git commit -m \"<message>\"".to_string(),
+            ]
         }
-        LoopDecision::SplitTask => vec!["(no git mutation; write a smaller prompt only)".to_string()],
+        LoopDecision::SplitTask => {
+            vec!["(no git mutation; write a smaller prompt only)".to_string()]
+        }
         LoopDecision::StopHookBroken => {
-            vec!["where.exe akar".to_string(), "pwsh -NoProfile -Command \"Get-Command akar\"".to_string()]
+            vec![
+                "where.exe akar".to_string(),
+                "pwsh -NoProfile -Command \"Get-Command akar\"".to_string(),
+            ]
         }
         LoopDecision::StopRepeatedBlock => vec!["inspect `.akar/HOOK_EVENTS.jsonl`".to_string()],
         _ => vec![],
@@ -1417,7 +1464,8 @@ fn check_decision_consistency(content: &str, out: &mut Vec<String>) -> bool {
         .or_else(|| {
             content.lines().find_map(|l| {
                 let t = l.trim();
-                t.strip_prefix("- governor decision: ").map(|s| s.trim().to_string())
+                t.strip_prefix("- governor decision: ")
+                    .map(|s| s.trim().to_string())
             })
         });
 
@@ -1608,11 +1656,8 @@ mod tests {
     }
 
     fn fresh_akar_dir(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "akar_loop_gov_{}_{}",
-            label,
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("akar_loop_gov_{}_{}", label, std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -1643,7 +1688,10 @@ mod tests {
         assert_eq!(LoopDecision::CommitCheckpoint.as_str(), "COMMIT_CHECKPOINT");
         assert_eq!(LoopDecision::SplitTask.as_str(), "SPLIT_TASK");
         assert_eq!(LoopDecision::StopHookBroken.as_str(), "STOP_HOOK_BROKEN");
-        assert_eq!(LoopDecision::StopRepeatedBlock.as_str(), "STOP_REPEATED_BLOCK");
+        assert_eq!(
+            LoopDecision::StopRepeatedBlock.as_str(),
+            "STOP_REPEATED_BLOCK"
+        );
         assert_eq!(LoopDecision::Unknown.as_str(), "UNKNOWN");
     }
 
@@ -1693,7 +1741,12 @@ mod tests {
         assert_eq!(report.decision, LoopDecision::StopRepeatedBlock);
         assert!(report.next_action.contains("git push --force"));
         assert!(report.suggested_prompt.contains("Do not retry"));
-        assert!(report.evidence_used.iter().any(|e| e.contains("repeated block")));
+        assert!(
+            report
+                .evidence_used
+                .iter()
+                .any(|e| e.contains("repeated block"))
+        );
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -1826,7 +1879,9 @@ mod tests {
         let report = decide(&cfg);
         assert_eq!(report.decision, LoopDecision::StopRepeatedBlock);
         assert!(
-            report.reason.contains(&format!("recent {}", RECENT_HOOK_WINDOW)),
+            report
+                .reason
+                .contains(&format!("recent {}", RECENT_HOOK_WINDOW)),
             "reason must include recent window size: {}",
             report.reason
         );
@@ -1983,7 +2038,11 @@ mod tests {
         let clean = diff_budget::is_working_tree_clean(&cfg.project_root).unwrap_or(false);
         if clean {
             assert_eq!(report.decision, LoopDecision::Ready);
-            assert!(report.next_action.contains("Baseline exists and tree is clean"));
+            assert!(
+                report
+                    .next_action
+                    .contains("Baseline exists and tree is clean")
+            );
         } else {
             assert_eq!(report.decision, LoopDecision::RunPostmortem);
         }
@@ -2026,10 +2085,8 @@ mod tests {
     #[test]
     fn missing_git_produces_unknown() {
         // Point project_root at a non-repo temp dir so git status fails.
-        let non_repo = std::env::temp_dir().join(format!(
-            "akar_loop_gov_nonrepo_{}",
-            std::process::id()
-        ));
+        let non_repo =
+            std::env::temp_dir().join(format!("akar_loop_gov_nonrepo_{}", std::process::id()));
         let _ = fs::remove_dir_all(&non_repo);
         fs::create_dir_all(&non_repo).unwrap();
         let cfg = config::Config {
@@ -2104,8 +2161,16 @@ mod tests {
             "NEXT_RUN must include window size: {}",
             out
         );
-        assert!(out.contains("2 times"), "NEXT_RUN must include count: {}", out);
-        assert!(out.contains("rm -rf /"), "NEXT_RUN must include command: {}", out);
+        assert!(
+            out.contains("2 times"),
+            "NEXT_RUN must include count: {}",
+            out
+        );
+        assert!(
+            out.contains("rm -rf /"),
+            "NEXT_RUN must include command: {}",
+            out
+        );
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -2178,7 +2243,10 @@ mod tests {
     #[test]
     fn json_str_extracts_command_preview() {
         let line = r#"{"timestamp":"t","command_preview":"git push --force","decision":"BLOCK"}"#;
-        assert_eq!(json_str(line, "command_preview").as_deref(), Some("git push --force"));
+        assert_eq!(
+            json_str(line, "command_preview").as_deref(),
+            Some("git push --force")
+        );
         assert_eq!(json_str(line, "decision").as_deref(), Some("BLOCK"));
         assert_eq!(json_str(line, "missing"), None);
     }
@@ -2245,7 +2313,10 @@ mod tests {
         let report = sample_governor_report();
         let out = format_governor_one_line(&report);
         assert_eq!(out.lines().count(), 1, "must be exactly one line");
-        assert!(!out.ends_with('\n'), "no trailing newline in the string itself");
+        assert!(
+            !out.ends_with('\n'),
+            "no trailing newline in the string itself"
+        );
     }
 
     #[test]
@@ -2253,8 +2324,17 @@ mod tests {
         let report = sample_governor_report();
         let out = format_governor_one_line(&report);
         // DECISION<TAB>SUGGESTED_PROMPT
-        assert!(out.starts_with("SNAPSHOT_NOW\t"), "must start with decision + tab: {}", out);
-        assert_eq!(out.matches('\t').count(), 1, "must have exactly one tab: {}", out);
+        assert!(
+            out.starts_with("SNAPSHOT_NOW\t"),
+            "must start with decision + tab: {}",
+            out
+        );
+        assert_eq!(
+            out.matches('\t').count(),
+            1,
+            "must have exactly one tab: {}",
+            out
+        );
         // The part after the tab is the suggested prompt.
         let prompt_part = out.split('\t').nth(1).unwrap();
         assert!(prompt_part.contains("preflight --snapshot"));
@@ -2270,7 +2350,11 @@ mod tests {
             evidence_used: vec![],
         };
         let out = format_governor_one_line(&report);
-        assert!(out.starts_with("UNKNOWN\t"), "UNKNOWN must still print with tab: {}", out);
+        assert!(
+            out.starts_with("UNKNOWN\t"),
+            "UNKNOWN must still print with tab: {}",
+            out
+        );
         assert_eq!(out.lines().count(), 1);
     }
 
@@ -2286,7 +2370,11 @@ mod tests {
             evidence_used: vec![],
         };
         let out = format_governor_one_line(&report);
-        assert_eq!(out.lines().count(), 1, "one-line output must not contain newlines");
+        assert_eq!(
+            out.lines().count(),
+            1,
+            "one-line output must not contain newlines"
+        );
         assert!(!out.contains('\n'));
     }
 
@@ -2343,7 +2431,11 @@ mod tests {
         // The reason's quotes must be escaped, and the newline collapsed
         // (one_line joins with space) then the space is literal — no raw
         // newline or unescaped quote inside the JSON value.
-        assert!(out.contains("\\\"quotes\\\""), "quotes must be escaped: {}", out);
+        assert!(
+            out.contains("\\\"quotes\\\""),
+            "quotes must be escaped: {}",
+            out
+        );
         assert!(!out.contains("\nhere"), "no raw newline in JSON: {}", out);
     }
 
@@ -2352,7 +2444,9 @@ mod tests {
         let report = sample_governor_report();
         let out = format_governor_json(&report);
         // evidence_used has two entries.
-        assert!(out.contains("\"evidence_used\":[\"git repository status: available\",\"working tree clean: yes\"]"));
+        assert!(out.contains(
+            "\"evidence_used\":[\"git repository status: available\",\"working tree clean: yes\"]"
+        ));
     }
 
     #[test]
@@ -2549,7 +2643,10 @@ mod tests {
         let _ = format_governor_one_line(&report);
         let _ = format_governor_json(&report);
         let log = dir.join("EVENT_LOG.jsonl");
-        assert!(!log.exists(), "default governor path must not write telemetry");
+        assert!(
+            !log.exists(),
+            "default governor path must not write telemetry"
+        );
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -2696,7 +2793,13 @@ mod tests {
         let native = report.decision.exit_code();
         assert_eq!(native, 10);
         let effective = 0; // --no-exit-code forces 0
-        let _ = write_governor_telemetry(&cfg, &report, GovernorTelemetryMode::OneLine, true, effective);
+        let _ = write_governor_telemetry(
+            &cfg,
+            &report,
+            GovernorTelemetryMode::OneLine,
+            true,
+            effective,
+        );
         let line = last_jsonl_line(&dir.join("EVENT_LOG.jsonl")).unwrap();
         assert!(line.contains("\"no_exit_code\":true"));
         assert!(line.contains("\"exit_code\":0"));
@@ -2710,15 +2813,25 @@ mod tests {
         let cfg = cfg_with_akar_dir(dir.clone());
         let report = LoopGovernorReport {
             decision: LoopDecision::StopRepeatedBlock,
-            reason: "same command blocked 2 times within recent 50 hook events: token=sk-secretvalue".to_string(),
+            reason:
+                "same command blocked 2 times within recent 50 hook events: token=sk-secretvalue"
+                    .to_string(),
             next_action: "a".to_string(),
             suggested_prompt: "p".to_string(),
             evidence_used: vec![],
         };
         let _ = write_governor_telemetry(&cfg, &report, GovernorTelemetryMode::OneLine, false, 21);
         let line = last_jsonl_line(&dir.join("EVENT_LOG.jsonl")).unwrap();
-        assert!(!line.contains("sk-secretvalue"), "secret must be redacted: {}", line);
-        assert!(line.contains("[REDACTED]"), "redaction marker expected: {}", line);
+        assert!(
+            !line.contains("sk-secretvalue"),
+            "secret must be redacted: {}",
+            line
+        );
+        assert!(
+            line.contains("[REDACTED]"),
+            "redaction marker expected: {}",
+            line
+        );
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -2735,7 +2848,10 @@ mod tests {
         };
         let _ = write_governor_telemetry(&cfg, &report, GovernorTelemetryMode::OneLine, false, 0);
         let line = last_jsonl_line(&dir.join("EVENT_LOG.jsonl")).unwrap();
-        assert!(!line.contains("UNIQUE_PROMPT_MARKER_DO_NOT_LOG"), "must not log suggested prompt");
+        assert!(
+            !line.contains("UNIQUE_PROMPT_MARKER_DO_NOT_LOG"),
+            "must not log suggested prompt"
+        );
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -2749,8 +2865,12 @@ mod tests {
             project_name: "test".to_string(),
         };
         let report = sample_governor_report();
-        let result = write_governor_telemetry(&cfg, &report, GovernorTelemetryMode::OneLine, false, 0);
-        assert!(result.is_none(), "telemetry must be skipped when .akar/ is absent");
+        let result =
+            write_governor_telemetry(&cfg, &report, GovernorTelemetryMode::OneLine, false, 0);
+        assert!(
+            result.is_none(),
+            "telemetry must be skipped when .akar/ is absent"
+        );
     }
 
     // ---- v0.19.0 next-run prompt compiler ---------------------------------
@@ -2962,7 +3082,9 @@ mod tests {
     fn split_task_objective_compiled_correctly() {
         let cfg = compiler_cfg();
         let prompt = compile(&cfg, &report_for(LoopDecision::SplitTask));
-        assert!(prompt.contains("Stop the broad task and create one smaller single-purpose prompt."));
+        assert!(
+            prompt.contains("Stop the broad task and create one smaller single-purpose prompt.")
+        );
         assert!(prompt.contains("(no git mutation; write a smaller prompt only)"));
     }
 
@@ -2970,7 +3092,9 @@ mod tests {
     fn stop_hook_broken_objective_compiled_correctly() {
         let cfg = compiler_cfg();
         let prompt = compile(&cfg, &report_for(LoopDecision::StopHookBroken));
-        assert!(prompt.contains("Stop Bash tool work until AKAR is visible in the Claude Code hook subprocess PATH."));
+        assert!(prompt.contains(
+            "Stop Bash tool work until AKAR is visible in the Claude Code hook subprocess PATH."
+        ));
         assert!(prompt.contains("`where.exe akar`"));
         assert!(prompt.contains("`pwsh -NoProfile -Command \"Get-Command akar\"`"));
     }
@@ -2979,7 +3103,10 @@ mod tests {
     fn stop_repeated_block_objective_compiled_correctly() {
         let cfg = compiler_cfg();
         let prompt = compile(&cfg, &report_for(LoopDecision::StopRepeatedBlock));
-        assert!(prompt.contains("Do not retry the blocked command. Replace it with a safe alternative."));
+        assert!(
+            prompt
+                .contains("Do not retry the blocked command. Replace it with a safe alternative.")
+        );
         assert!(prompt.contains("inspect `.akar/HOOK_EVENTS.jsonl`"));
     }
 
@@ -2995,8 +3122,14 @@ mod tests {
 
     #[test]
     fn decision_class_continue_for_ready_and_snapshot() {
-        assert_eq!(LoopDecision::Ready.decision_class(), DecisionClass::Continue);
-        assert_eq!(LoopDecision::SnapshotNow.decision_class(), DecisionClass::Continue);
+        assert_eq!(
+            LoopDecision::Ready.decision_class(),
+            DecisionClass::Continue
+        );
+        assert_eq!(
+            LoopDecision::SnapshotNow.decision_class(),
+            DecisionClass::Continue
+        );
         let cfg = compiler_cfg();
         let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         assert!(prompt.contains("- class: continue-class"));
@@ -3004,9 +3137,18 @@ mod tests {
 
     #[test]
     fn decision_class_action_required_for_postmortem_commit_split() {
-        assert_eq!(LoopDecision::RunPostmortem.decision_class(), DecisionClass::ActionRequired);
-        assert_eq!(LoopDecision::CommitCheckpoint.decision_class(), DecisionClass::ActionRequired);
-        assert_eq!(LoopDecision::SplitTask.decision_class(), DecisionClass::ActionRequired);
+        assert_eq!(
+            LoopDecision::RunPostmortem.decision_class(),
+            DecisionClass::ActionRequired
+        );
+        assert_eq!(
+            LoopDecision::CommitCheckpoint.decision_class(),
+            DecisionClass::ActionRequired
+        );
+        assert_eq!(
+            LoopDecision::SplitTask.decision_class(),
+            DecisionClass::ActionRequired
+        );
         let cfg = compiler_cfg();
         let prompt = compile(&cfg, &report_for(LoopDecision::SplitTask));
         assert!(prompt.contains("- class: action-required"));
@@ -3014,8 +3156,14 @@ mod tests {
 
     #[test]
     fn decision_class_stop_for_hook_broken_repeated_unknown() {
-        assert_eq!(LoopDecision::StopHookBroken.decision_class(), DecisionClass::Stop);
-        assert_eq!(LoopDecision::StopRepeatedBlock.decision_class(), DecisionClass::Stop);
+        assert_eq!(
+            LoopDecision::StopHookBroken.decision_class(),
+            DecisionClass::Stop
+        );
+        assert_eq!(
+            LoopDecision::StopRepeatedBlock.decision_class(),
+            DecisionClass::Stop
+        );
         assert_eq!(LoopDecision::Unknown.decision_class(), DecisionClass::Stop);
         let cfg = compiler_cfg();
         let prompt = compile(&cfg, &report_for(LoopDecision::Unknown));
@@ -3076,7 +3224,12 @@ mod tests {
         assert_eq!(first.len(), 10);
         for d in decisions.iter().skip(1) {
             let p = compile(&cfg, &report_for(d.clone()));
-            assert_eq!(section_headers(&p), first, "section order differs for {:?}", d);
+            assert_eq!(
+                section_headers(&p),
+                first,
+                "section order differs for {:?}",
+                d
+            );
         }
     }
 
@@ -3087,7 +3240,11 @@ mod tests {
         let cfg = compiler_cfg();
         let prompt = compile(&cfg, &report_for(LoopDecision::Ready));
         let result = validate_next_run(&prompt);
-        assert!(result.pass, "valid compiled prompt should PASS: {:?}", result.reasons);
+        assert!(
+            result.pass,
+            "valid compiled prompt should PASS: {:?}",
+            result.reasons
+        );
         assert!(result.reasons.is_empty());
     }
 
@@ -3155,7 +3312,11 @@ mod tests {
         let _ = lines.split_off(0);
         let result = validate_next_run(&out);
         assert!(!result.pass);
-        assert!(result.reasons.iter().any(|r| r.contains("Hard Rules")), "{:?}", result.reasons);
+        assert!(
+            result.reasons.iter().any(|r| r.contains("Hard Rules")),
+            "{:?}",
+            result.reasons
+        );
     }
 
     #[test]
@@ -3182,7 +3343,14 @@ mod tests {
         }
         let result = validate_next_run(&out);
         assert!(!result.pass);
-        assert!(result.reasons.iter().any(|r| r.contains("Allowed Commands")), "{:?}", result.reasons);
+        assert!(
+            result
+                .reasons
+                .iter()
+                .any(|r| r.contains("Allowed Commands")),
+            "{:?}",
+            result.reasons
+        );
     }
 
     #[test]
@@ -3209,7 +3377,14 @@ mod tests {
         }
         let result = validate_next_run(&out);
         assert!(!result.pass);
-        assert!(result.reasons.iter().any(|r| r.contains("Forbidden Commands")), "{:?}", result.reasons);
+        assert!(
+            result
+                .reasons
+                .iter()
+                .any(|r| r.contains("Forbidden Commands")),
+            "{:?}",
+            result.reasons
+        );
     }
 
     #[test]
@@ -3236,7 +3411,11 @@ mod tests {
         }
         let result = validate_next_run(&out);
         assert!(!result.pass);
-        assert!(result.reasons.iter().any(|r| r.contains("Stop Conditions")), "{:?}", result.reasons);
+        assert!(
+            result.reasons.iter().any(|r| r.contains("Stop Conditions")),
+            "{:?}",
+            result.reasons
+        );
     }
 
     #[test]
@@ -3263,7 +3442,14 @@ mod tests {
         }
         let result = validate_next_run(&out);
         assert!(!result.pass);
-        assert!(result.reasons.iter().any(|r| r.contains("Verification Required")), "{:?}", result.reasons);
+        assert!(
+            result
+                .reasons
+                .iter()
+                .any(|r| r.contains("Verification Required")),
+            "{:?}",
+            result.reasons
+        );
     }
 
     #[test]
@@ -3273,7 +3459,14 @@ mod tests {
         let broken = prompt.replace("## Final Response Format", "## (removed)");
         let result = validate_next_run(&broken);
         assert!(!result.pass);
-        assert!(result.reasons.iter().any(|r| r.contains("Final Response Format")), "{:?}", result.reasons);
+        assert!(
+            result
+                .reasons
+                .iter()
+                .any(|r| r.contains("Final Response Format")),
+            "{:?}",
+            result.reasons
+        );
     }
 
     #[test]
@@ -3284,7 +3477,11 @@ mod tests {
         let broken = prompt.replace("- `rm -rf /*`\n", "");
         let result = validate_next_run(&broken);
         assert!(!result.pass);
-        assert!(result.reasons.iter().any(|r| r.contains("rm -rf /*")), "{:?}", result.reasons);
+        assert!(
+            result.reasons.iter().any(|r| r.contains("rm -rf /*")),
+            "{:?}",
+            result.reasons
+        );
     }
 
     #[test]
@@ -3294,7 +3491,14 @@ mod tests {
         let broken = prompt.replace("- Do not retry blocked commands.\n", "");
         let result = validate_next_run(&broken);
         assert!(!result.pass);
-        assert!(result.reasons.iter().any(|r| r.contains("Do not retry blocked commands")), "{:?}", result.reasons);
+        assert!(
+            result
+                .reasons
+                .iter()
+                .any(|r| r.contains("Do not retry blocked commands")),
+            "{:?}",
+            result.reasons
+        );
     }
 
     #[test]
@@ -3304,7 +3508,14 @@ mod tests {
         let broken = prompt.replace("- Stop if verification fails.\n", "");
         let result = validate_next_run(&broken);
         assert!(!result.pass);
-        assert!(result.reasons.iter().any(|r| r.contains("Stop if verification fails")), "{:?}", result.reasons);
+        assert!(
+            result
+                .reasons
+                .iter()
+                .any(|r| r.contains("Stop if verification fails")),
+            "{:?}",
+            result.reasons
+        );
     }
 
     #[test]
@@ -3315,7 +3526,11 @@ mod tests {
         let broken = prompt.replace("- class: continue-class", "- class: stop-class");
         let result = validate_next_run(&broken);
         assert!(!result.pass);
-        assert!(result.reasons.iter().any(|r| r.contains("class mismatch")), "{:?}", result.reasons);
+        assert!(
+            result.reasons.iter().any(|r| r.contains("class mismatch")),
+            "{:?}",
+            result.reasons
+        );
     }
 
     #[test]
@@ -3329,7 +3544,14 @@ mod tests {
         );
         let result = validate_next_run(&broken);
         assert!(!result.pass);
-        assert!(result.reasons.iter().any(|r| r.contains("objective mismatch")), "{:?}", result.reasons);
+        assert!(
+            result
+                .reasons
+                .iter()
+                .any(|r| r.contains("objective mismatch")),
+            "{:?}",
+            result.reasons
+        );
     }
 
     #[test]
@@ -3351,8 +3573,7 @@ mod tests {
             assert!(
                 result.pass,
                 "decision {:?} should produce a valid NEXT_RUN: {:?}",
-                d,
-                result.reasons
+                d, result.reasons
             );
         }
     }
@@ -3390,7 +3611,10 @@ mod tests {
         // The check path reads (missing) and validates an empty string.
         let _result = validate_next_run("");
         // Still no NEXT_RUN.md written.
-        assert!(!dir.join("NEXT_RUN.md").exists(), "request --check must not write NEXT_RUN.md");
+        assert!(
+            !dir.join("NEXT_RUN.md").exists(),
+            "request --check must not write NEXT_RUN.md"
+        );
         let _ = &cfg;
         fs::remove_dir_all(&dir).ok();
     }
@@ -3539,7 +3763,10 @@ mod tests {
         let cfg = cfg_with_akar_dir(fresh_akar_dir("task_redact"));
         let report = report_for(LoopDecision::Ready);
         let prompt = compile_next_run_prompt(&cfg, &report, Some("fix token=sk-abc123secret bug"));
-        assert!(!prompt.contains("sk-abc123"), "task secrets must be redacted");
+        assert!(
+            !prompt.contains("sk-abc123"),
+            "task secrets must be redacted"
+        );
         assert!(prompt.contains("[REDACTED]"));
     }
 
@@ -3566,7 +3793,10 @@ mod tests {
         let _ = format_governor_report(&report);
         let _ = format_governor_one_line(&report);
         let _ = format_governor_json(&report);
-        assert!(!dir.join("NEXT_RUN.md").exists(), "governor must not write NEXT_RUN.md");
+        assert!(
+            !dir.join("NEXT_RUN.md").exists(),
+            "governor must not write NEXT_RUN.md"
+        );
         fs::remove_dir_all(&dir).ok();
     }
 

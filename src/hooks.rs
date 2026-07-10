@@ -16,8 +16,8 @@
 //! source tree. AKAR never modifies `~/.claude/settings.json`; the user wires
 //! the PreToolUse hook manually.
 
-use std::path::{Path, PathBuf};
 use crate::config;
+use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
 // Embedded templates (compiled into the binary)
@@ -124,7 +124,9 @@ pub fn find_hook_templates(project_root: &Path) -> Vec<HookTemplate> {
 /// Filesystem-only discovery (source-tree then exe-dir). Returns the templates
 /// found and which source they came from. Returns `(vec![], None)` if neither
 /// directory has templates.
-fn discover_from_filesystem(project_root: &Path) -> (Vec<HookTemplate>, Option<HookTemplateSource>) {
+fn discover_from_filesystem(
+    project_root: &Path,
+) -> (Vec<HookTemplate>, Option<HookTemplateSource>) {
     let candidates: Vec<(PathBuf, HookTemplateSource)> = vec![
         (
             project_root.join("templates").join("hooks"),
@@ -136,7 +138,10 @@ fn discover_from_filesystem(project_root: &Path) -> (Vec<HookTemplate>, Option<H
                 .and_then(|p| p.parent().map(|d| d.join("templates").join("hooks")));
             match exe_dir {
                 Some(d) => (d, HookTemplateSource::ExeDir),
-                None => (PathBuf::from("/__nonexistent_exe_dir__"), HookTemplateSource::ExeDir),
+                None => (
+                    PathBuf::from("/__nonexistent_exe_dir__"),
+                    HookTemplateSource::ExeDir,
+                ),
             }
         },
     ];
@@ -215,7 +220,10 @@ fn embedded_templates() -> Vec<HookTemplate> {
 pub fn discover_hook_templates(cfg: &config::Config) -> (Vec<HookTemplate>, HookTemplateSource) {
     let (fs_templates, fs_source) = discover_from_filesystem(&cfg.project_root);
     if !fs_templates.is_empty() {
-        return (fs_templates, fs_source.unwrap_or(HookTemplateSource::SourceTree));
+        return (
+            fs_templates,
+            fs_source.unwrap_or(HookTemplateSource::SourceTree),
+        );
     }
 
     let installed = discover_installed(&cfg.akar_dir);
@@ -453,7 +461,10 @@ pub fn format_hooks_check(result: &HooksCheckResult) -> String {
         for name in &result.templates_missing {
             out.push_str(&format!("    - {}\n", name));
         }
-        out.push_str(&format!("  guidance: {}\n", crate::foundation::hook_broken_playbook()));
+        out.push_str(&format!(
+            "  guidance: {}\n",
+            crate::foundation::hook_broken_playbook()
+        ));
     }
 
     out
@@ -535,7 +546,11 @@ pub fn parse_hook_event(json: &str) -> HookEvent {
     let tool_name = extract_json_str_value(json, "tool_name").unwrap_or_default();
     let command = extract_json_str_value(json, "command").unwrap_or_default();
     let cwd = extract_json_str_value(json, "cwd").unwrap_or_default();
-    HookEvent { tool_name, command, cwd }
+    HookEvent {
+        tool_name,
+        command,
+        cwd,
+    }
 }
 
 /// Decide what to do with a parsed hook event.
@@ -582,7 +597,10 @@ fn extract_json_str_value(s: &str, key: &str) -> Option<String> {
                 't' => val.push('\t'),
                 '"' => val.push('"'),
                 '\\' => val.push('\\'),
-                _ => { val.push('\\'); val.push(c); }
+                _ => {
+                    val.push('\\');
+                    val.push(c);
+                }
             }
             escaped = false;
         } else if c == '\\' {
@@ -610,30 +628,54 @@ mod tests {
 
     #[test]
     fn embedded_bash_template_is_nonempty() {
-        assert!(!EMBEDDED_HOOK_SH.trim().is_empty(), "embedded bash template must be non-empty");
+        assert!(
+            !EMBEDDED_HOOK_SH.trim().is_empty(),
+            "embedded bash template must be non-empty"
+        );
         assert!(EMBEDDED_HOOK_SH.contains("akar safety"));
         assert!(EMBEDDED_HOOK_SH.contains("HOOK_EVENTS.jsonl"));
         assert!(EMBEDDED_HOOK_SH.contains("exit 2"));
         // v0.29.0: template must extract cwd from JSON for log root targeting
-        assert!(EMBEDDED_HOOK_SH.contains("\"cwd\""), "bash template must read cwd from JSON");
-        assert!(EMBEDDED_HOOK_SH.contains("log_root"), "bash template must include log_root in events");
+        assert!(
+            EMBEDDED_HOOK_SH.contains("\"cwd\""),
+            "bash template must read cwd from JSON"
+        );
+        assert!(
+            EMBEDDED_HOOK_SH.contains("log_root"),
+            "bash template must include log_root in events"
+        );
     }
 
     #[test]
     fn embedded_powershell_template_is_nonempty() {
-        assert!(!EMBEDDED_HOOK_PS1.trim().is_empty(), "embedded ps1 template must be non-empty");
+        assert!(
+            !EMBEDDED_HOOK_PS1.trim().is_empty(),
+            "embedded ps1 template must be non-empty"
+        );
         assert!(EMBEDDED_HOOK_PS1.contains("akar safety"));
         assert!(EMBEDDED_HOOK_PS1.contains("HOOK_EVENTS.jsonl"));
         assert!(EMBEDDED_HOOK_PS1.contains("exit 2"));
         // v0.29.0: template must extract cwd from JSON for log root targeting
-        assert!(EMBEDDED_HOOK_PS1.contains("\"cwd\""), "ps1 template must read cwd from JSON");
-        assert!(EMBEDDED_HOOK_PS1.contains("log_root"), "ps1 template must include log_root in events");
+        assert!(
+            EMBEDDED_HOOK_PS1.contains("\"cwd\""),
+            "ps1 template must read cwd from JSON"
+        );
+        assert!(
+            EMBEDDED_HOOK_PS1.contains("log_root"),
+            "ps1 template must include log_root in events"
+        );
     }
 
     #[test]
     fn embedded_template_accessor_returns_correct_content() {
-        assert_eq!(embedded_template_content("pre-tool-call.sh"), Some(EMBEDDED_HOOK_SH));
-        assert_eq!(embedded_template_content("pre-tool-call.ps1"), Some(EMBEDDED_HOOK_PS1));
+        assert_eq!(
+            embedded_template_content("pre-tool-call.sh"),
+            Some(EMBEDDED_HOOK_SH)
+        );
+        assert_eq!(
+            embedded_template_content("pre-tool-call.ps1"),
+            Some(EMBEDDED_HOOK_PS1)
+        );
         assert_eq!(embedded_template_content("nonexistent"), None);
     }
 
@@ -671,7 +713,11 @@ mod tests {
         let (cfg, dir) = temp_cfg("check_pass");
         write_templates(&dir);
         let result = check_hooks(&cfg);
-        assert!(result.all_valid, "expected all_valid=true, got: {:?}", result.templates_missing);
+        assert!(
+            result.all_valid,
+            "expected all_valid=true, got: {:?}",
+            result.templates_missing
+        );
         assert_eq!(result.templates_found.len(), 2);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -699,11 +745,22 @@ mod tests {
         let (cfg, dir) = temp_cfg("check_no_safety");
         let hooks_dir = dir.join("templates").join("hooks");
         let _ = fs::create_dir_all(&hooks_dir);
-        let _ = fs::write(hooks_dir.join("pre-tool-call.sh"), "#!/bin/bash\nJSON=$(cat)\nHOOK_EVENTS.jsonl\nexit 2\n");
-        let _ = fs::write(hooks_dir.join("pre-tool-call.ps1"), "# PowerShell\n$input | Out-String\nHOOK_EVENTS.jsonl\nexit 2\n");
+        let _ = fs::write(
+            hooks_dir.join("pre-tool-call.sh"),
+            "#!/bin/bash\nJSON=$(cat)\nHOOK_EVENTS.jsonl\nexit 2\n",
+        );
+        let _ = fs::write(
+            hooks_dir.join("pre-tool-call.ps1"),
+            "# PowerShell\n$input | Out-String\nHOOK_EVENTS.jsonl\nexit 2\n",
+        );
         let result = check_hooks(&cfg);
         assert!(!result.all_valid);
-        assert!(result.templates_missing.iter().any(|m| m.contains("akar safety")));
+        assert!(
+            result
+                .templates_missing
+                .iter()
+                .any(|m| m.contains("akar safety"))
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -711,41 +768,40 @@ mod tests {
 
     #[test]
     fn hook_templates_write_to_hook_events_jsonl() {
-        let templates = find_hook_templates(
-            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        );
+        let templates = find_hook_templates(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")));
         assert!(!templates.is_empty(), "no templates found");
         for t in &templates {
             assert!(
                 t.content.contains("HOOK_EVENTS.jsonl"),
-                "template {} must write to .akar/HOOK_EVENTS.jsonl", t.name
+                "template {} must write to .akar/HOOK_EVENTS.jsonl",
+                t.name
             );
         }
     }
 
     #[test]
     fn hook_templates_do_not_log_full_stdin_json() {
-        let templates = find_hook_templates(
-            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        );
+        let templates = find_hook_templates(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")));
         for t in &templates {
             // The full JSON blob variable must not be written to the log line
             // (bash: $JSON must not appear in the write_event/log line;
             //  ps1: $json must not appear in the Add-Content logLine)
             let log_line_writes_full_json = if t.name.ends_with(".sh") {
                 // Check that no line writing to HOOK_EVENTS.jsonl contains $JSON verbatim
-                t.content.lines().any(|line| {
-                    line.contains("HOOK_EVENTS.jsonl") && line.contains("$JSON")
-                })
+                t.content
+                    .lines()
+                    .any(|line| line.contains("HOOK_EVENTS.jsonl") && line.contains("$JSON"))
             } else {
                 // ps1: no logLine construction should contain $json (the full blob variable)
                 t.content.lines().any(|line| {
-                    (line.contains("HOOK_EVENTS.jsonl") || line.contains("logLine")) && line.contains("$json")
+                    (line.contains("HOOK_EVENTS.jsonl") || line.contains("logLine"))
+                        && line.contains("$json")
                 })
             };
             assert!(
                 !log_line_writes_full_json,
-                "template {} must not write full stdin JSON blob to hook log", t.name
+                "template {} must not write full stdin JSON blob to hook log",
+                t.name
             );
         }
     }
@@ -756,13 +812,22 @@ mod tests {
         let hooks_dir = dir.join("templates").join("hooks");
         let _ = fs::create_dir_all(&hooks_dir);
         // Templates have akar safety and stdin but no HOOK_EVENTS.jsonl
-        let _ = fs::write(hooks_dir.join("pre-tool-call.sh"),
-            "#!/bin/bash\nJSON=$(cat)\nakar safety \"$CMD\"\nexit 2\n");
-        let _ = fs::write(hooks_dir.join("pre-tool-call.ps1"),
-            "# PowerShell\n$input | Out-String\nakar safety $cmd\nexit 2\n");
+        let _ = fs::write(
+            hooks_dir.join("pre-tool-call.sh"),
+            "#!/bin/bash\nJSON=$(cat)\nakar safety \"$CMD\"\nexit 2\n",
+        );
+        let _ = fs::write(
+            hooks_dir.join("pre-tool-call.ps1"),
+            "# PowerShell\n$input | Out-String\nakar safety $cmd\nexit 2\n",
+        );
         let result = check_hooks(&cfg);
         assert!(!result.all_valid);
-        assert!(result.templates_missing.iter().any(|m| m.contains("HOOK_EVENTS.jsonl")));
+        assert!(
+            result
+                .templates_missing
+                .iter()
+                .any(|m| m.contains("HOOK_EVENTS.jsonl"))
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -772,10 +837,14 @@ mod tests {
         let hooks_dir = dir.join("templates").join("hooks");
         let _ = fs::create_dir_all(&hooks_dir);
         // Templates have akar safety and logging but no stdin read
-        let _ = fs::write(hooks_dir.join("pre-tool-call.sh"),
-            "#!/bin/bash\nakar safety \"$1\"\nHOOK_EVENTS.jsonl\nexit 2\n");
-        let _ = fs::write(hooks_dir.join("pre-tool-call.ps1"),
-            "# PowerShell\nakar safety $Command\nHOOK_EVENTS.jsonl\nexit 2\n");
+        let _ = fs::write(
+            hooks_dir.join("pre-tool-call.sh"),
+            "#!/bin/bash\nakar safety \"$1\"\nHOOK_EVENTS.jsonl\nexit 2\n",
+        );
+        let _ = fs::write(
+            hooks_dir.join("pre-tool-call.ps1"),
+            "# PowerShell\nakar safety $Command\nHOOK_EVENTS.jsonl\nexit 2\n",
+        );
         let result = check_hooks(&cfg);
         assert!(!result.all_valid);
         assert!(result.templates_missing.iter().any(|m| m.contains("stdin")));
@@ -801,7 +870,12 @@ mod tests {
         assert!(!result.cancelled);
         assert_eq!(result.copied.len(), 2);
         assert!(cfg.akar_dir.join("hooks").join("pre-tool-call.sh").exists());
-        assert!(cfg.akar_dir.join("hooks").join("pre-tool-call.ps1").exists());
+        assert!(
+            cfg.akar_dir
+                .join("hooks")
+                .join("pre-tool-call.ps1")
+                .exists()
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -827,12 +901,26 @@ mod tests {
         let (cfg, dir) = temp_cfg("install_embedded");
         let _ = std::fs::create_dir_all(&cfg.akar_dir);
         let result = install_hooks(&cfg, true);
-        assert!(!result.cancelled, "install should not cancel: {}", result.reason);
-        assert_eq!(result.copied.len(), 2, "both embedded templates should be written");
+        assert!(
+            !result.cancelled,
+            "install should not cancel: {}",
+            result.reason
+        );
+        assert_eq!(
+            result.copied.len(),
+            2,
+            "both embedded templates should be written"
+        );
         assert!(cfg.akar_dir.join("hooks").join("pre-tool-call.sh").exists());
-        assert!(cfg.akar_dir.join("hooks").join("pre-tool-call.ps1").exists());
+        assert!(
+            cfg.akar_dir
+                .join("hooks")
+                .join("pre-tool-call.ps1")
+                .exists()
+        );
         // The written content must match the embedded templates.
-        let sh = std::fs::read_to_string(cfg.akar_dir.join("hooks").join("pre-tool-call.sh")).unwrap();
+        let sh =
+            std::fs::read_to_string(cfg.akar_dir.join("hooks").join("pre-tool-call.sh")).unwrap();
         assert_eq!(sh, EMBEDDED_HOOK_SH);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -849,7 +937,11 @@ mod tests {
         // Second install should find identical content.
         let second = install_hooks(&cfg, true);
         assert!(!second.cancelled);
-        assert!(second.copied.is_empty(), "no rewrites when identical: {:?}", second.copied);
+        assert!(
+            second.copied.is_empty(),
+            "no rewrites when identical: {:?}",
+            second.copied
+        );
         assert_eq!(second.unchanged.len(), 2, "both should be unchanged");
         assert!(second.backed_up.is_empty());
         let _ = fs::remove_dir_all(&dir);
@@ -863,7 +955,11 @@ mod tests {
         let _ = std::fs::create_dir_all(&cfg.akar_dir);
         let hooks_dir = cfg.akar_dir.join("hooks");
         let _ = std::fs::create_dir_all(&hooks_dir);
-        std::fs::write(hooks_dir.join("pre-tool-call.sh"), "user-modified content\n").unwrap();
+        std::fs::write(
+            hooks_dir.join("pre-tool-call.sh"),
+            "user-modified content\n",
+        )
+        .unwrap();
         let result = install_hooks(&cfg, true);
         assert!(!result.cancelled);
         assert!(result.backed_up.contains(&"pre-tool-call.sh".to_string()));
@@ -880,8 +976,14 @@ mod tests {
         assert!(out.contains("pre-tool-call.sh"));
         assert!(out.contains("pre-tool-call.ps1"));
         assert!(out.contains("does not install hooks into Claude Code automatically"));
-        assert!(out.contains("akar hooks --install"), "help must mention the install command");
-        assert!(out.contains("~/.claude/settings.json"), "help must mention manual settings wiring");
+        assert!(
+            out.contains("akar hooks --install"),
+            "help must mention the install command"
+        );
+        assert!(
+            out.contains("~/.claude/settings.json"),
+            "help must mention manual settings wiring"
+        );
     }
 
     // -- hook JSON parsing ----------------------------------------------------
@@ -963,7 +1065,10 @@ mod tests {
         assert_eq!(e.cwd, "/home/user/my-project");
         if let HookDecision::Check(cmd) = hook_decision(&e) {
             let a = crate::safety::classify_command(&cmd);
-            assert!(!a.blocked, "cargo test must still be ALLOWed with cwd present");
+            assert!(
+                !a.blocked,
+                "cargo test must still be ALLOWed with cwd present"
+            );
         } else {
             panic!("expected Check decision");
         }
@@ -988,13 +1093,19 @@ mod tests {
     #[test]
     fn hook_decision_bash_cargo_test_is_check() {
         let e = parse_hook_event(BASH_CARGO_TEST);
-        assert_eq!(hook_decision(&e), HookDecision::Check("cargo test".to_string()));
+        assert_eq!(
+            hook_decision(&e),
+            HookDecision::Check("cargo test".to_string())
+        );
     }
 
     #[test]
     fn hook_decision_bash_rm_rf_is_check() {
         let e = parse_hook_event(BASH_RM_RF);
-        assert_eq!(hook_decision(&e), HookDecision::Check("rm -rf /".to_string()));
+        assert_eq!(
+            hook_decision(&e),
+            HookDecision::Check("rm -rf /".to_string())
+        );
     }
 
     #[test]
@@ -1030,13 +1141,12 @@ mod tests {
     #[test]
     fn hook_templates_use_exit_2_for_block() {
         // Templates must use exit 2 (not exit 1) — Claude Code only blocks on exit 2
-        let templates = find_hook_templates(
-            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        );
+        let templates = find_hook_templates(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")));
         for t in &templates {
             assert!(
                 t.content.contains("exit 2"),
-                "template {} must use exit 2 for BLOCKED, not exit 1", t.name
+                "template {} must use exit 2 for BLOCKED, not exit 1",
+                t.name
             );
             // Check that no non-comment line uses exit 1
             for line in t.content.lines() {
@@ -1045,7 +1155,9 @@ mod tests {
                 if !is_comment {
                     assert!(
                         !trimmed.contains("exit 1"),
-                        "template {} has executable exit 1 on line: {}", t.name, line
+                        "template {} has executable exit 1 on line: {}",
+                        t.name,
+                        line
                     );
                 }
             }
@@ -1055,13 +1167,13 @@ mod tests {
     #[test]
     fn hook_templates_read_stdin_not_argv() {
         // Templates must read JSON from stdin, not $1 / param
-        let templates = find_hook_templates(
-            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        );
+        let templates = find_hook_templates(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")));
         for t in &templates {
             if t.name.ends_with(".sh") {
                 assert!(
-                    t.content.contains("cat") || t.content.contains("stdin") || t.content.contains("read"),
+                    t.content.contains("cat")
+                        || t.content.contains("stdin")
+                        || t.content.contains("read"),
                     "bash template must read from stdin"
                 );
             }

@@ -1,7 +1,6 @@
 /// Bootstrap engine — copies templates into .akar/ for a fresh project.
 ///
 /// Idempotent: never overwrites files that already exist.
-
 use std::path::{Path, PathBuf};
 
 use crate::config;
@@ -113,9 +112,10 @@ pub fn run_bootstrap(cfg: &config::Config) -> BootstrapResult {
         let file_name = match src.file_name().and_then(|n| n.to_str()) {
             Some(n) => n.to_string(),
             None => {
-                result
-                    .warnings
-                    .push(format!("skipping entry with invalid filename: {}", src.display()));
+                result.warnings.push(format!(
+                    "skipping entry with invalid filename: {}",
+                    src.display()
+                ));
                 continue;
             }
         };
@@ -369,11 +369,23 @@ mod tests {
             "header line wrong, got: {}",
             report
         );
-        assert!(report.contains("PROJECT_DNA.md"), "should list created file");
-        assert!(report.contains("LESSONS.md (already exists)"), "should list skipped file");
-        assert!(report.contains("next: run 'akar doctor' to verify"), "should have next hint");
+        assert!(
+            report.contains("PROJECT_DNA.md"),
+            "should list created file"
+        );
+        assert!(
+            report.contains("LESSONS.md (already exists)"),
+            "should list skipped file"
+        );
+        assert!(
+            report.contains("next: run 'akar doctor' to verify"),
+            "should have next hint"
+        );
         // No warnings section when warnings is empty.
-        assert!(!report.contains("warnings:"), "should not show empty warnings section");
+        assert!(
+            !report.contains("warnings:"),
+            "should not show empty warnings section"
+        );
     }
 
     #[test]

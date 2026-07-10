@@ -61,12 +61,12 @@ fn json_escape(s: &str) -> String {
 fn to_json_line(e: &EventEntry) -> String {
     format!(
         r#"{{"ts":"{ts}","project":"{project}","model":"{model}","event":"{event}","event_type":"{event_type}","summary":"{summary}","resolution":"{resolution}","confidence":"{confidence}"}}"#,
-        ts         = json_escape(&e.ts),
-        project    = json_escape(&e.project),
-        model      = json_escape(&e.model),
-        event      = json_escape(&e.event),
+        ts = json_escape(&e.ts),
+        project = json_escape(&e.project),
+        model = json_escape(&e.model),
+        event = json_escape(&e.event),
         event_type = json_escape(&e.event_type),
-        summary    = json_escape(&e.summary),
+        summary = json_escape(&e.summary),
         resolution = json_escape(&e.resolution),
         confidence = json_escape(&e.confidence),
     )
@@ -140,7 +140,20 @@ pub fn now_iso8601() -> String {
         remaining -= days_in_year * 86400;
         y += 1;
     }
-    let month_days: [u64; 12] = [31, if is_leap(y) { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let month_days: [u64; 12] = [
+        31,
+        if is_leap(y) { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     for days in month_days {
         if remaining < days * 86400 {
             break;
@@ -172,12 +185,20 @@ pub struct LogSummary {
 /// Returns a `LogSummary` — never panics.
 pub fn summarize_log(log_path: &Path, recent_n: usize) -> LogSummary {
     if !log_path.exists() {
-        return LogSummary { total_events: 0, recent: Vec::new(), exists: false };
+        return LogSummary {
+            total_events: 0,
+            recent: Vec::new(),
+            exists: false,
+        };
     }
     let all = read_recent(log_path, usize::MAX);
     let total = all.len();
     let recent = read_recent(log_path, recent_n);
-    LogSummary { total_events: total, recent, exists: true }
+    LogSummary {
+        total_events: total,
+        recent,
+        exists: true,
+    }
 }
 
 /// Rotate the log file if it exceeds `max_bytes`.
@@ -278,7 +299,10 @@ mod tests {
         // Threshold below current size — should rotate.
         let rotated = rotate_if_needed(&path, size - 1);
         assert!(rotated, "should have rotated");
-        assert!(!path.exists(), "original file should be gone after rotation");
+        assert!(
+            !path.exists(),
+            "original file should be gone after rotation"
+        );
         assert!(bak_path.exists(), "backup file should exist after rotation");
 
         let _ = fs::remove_file(&bak_path);

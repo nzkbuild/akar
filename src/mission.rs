@@ -122,7 +122,8 @@ pub fn run_mission(prompt: &str, cfg: &config::Config) -> Mission {
         .unwrap_or(false);
 
     if !contract_ok {
-        m.warnings.push("contract sanity check failed: files_max == 0".to_string());
+        m.warnings
+            .push("contract sanity check failed: files_max == 0".to_string());
         m.log("contract", "FAILED: contract sanity check");
         m.state = MissionState::Failed;
         write_telemetry_event(&m, cfg);
@@ -149,8 +150,10 @@ pub fn run_mission(prompt: &str, cfg: &config::Config) -> Mission {
             .collect::<Vec<_>>()
             .join(", ")
     };
-    m.verify_results
-        .push(format!("scaffold mode (commands not executed): recipe=[{}]", recipe_label));
+    m.verify_results.push(format!(
+        "scaffold mode (commands not executed): recipe=[{}]",
+        recipe_label
+    ));
     m.log("verify", &format!("recipe detected: {}", recipe_label));
 
     // --- Review ---
@@ -159,7 +162,10 @@ pub fn run_mission(prompt: &str, cfg: &config::Config) -> Mission {
         if !tc.stop_conditions.is_empty() {
             m.log(
                 "review",
-                &format!("{} stop condition(s) pending review", tc.stop_conditions.len()),
+                &format!(
+                    "{} stop condition(s) pending review",
+                    tc.stop_conditions.len()
+                ),
             );
         } else {
             m.log("review", "no stop conditions — review clean");
@@ -194,13 +200,15 @@ fn write_telemetry_event(m: &Mission, cfg: &config::Config) {
             format!("{:?}", tc.autonomy),
         )
     } else {
-        ("unknown".to_string(), "unknown".to_string(), "unknown".to_string())
+        (
+            "unknown".to_string(),
+            "unknown".to_string(),
+            "unknown".to_string(),
+        )
     };
 
     // Truncate prompt to 80 chars and redact potential secrets.
-    let prompt_preview = crate::config::redact(
-        &m.prompt.chars().take(80).collect::<String>()
-    );
+    let prompt_preview = crate::config::redact(&m.prompt.chars().take(80).collect::<String>());
 
     let state_str = match m.state {
         MissionState::Done => "done",
@@ -211,14 +219,23 @@ fn write_telemetry_event(m: &Mission, cfg: &config::Config) {
 
     let summary = format!(
         "mission/{} task={} risk={} autonomy={} warnings={} prompt={}",
-        state_str, task_type, risk, autonomy, m.warnings.len(), prompt_preview
+        state_str,
+        task_type,
+        risk,
+        autonomy,
+        m.warnings.len(),
+        prompt_preview
     );
 
     let entry = event_log::EventEntry {
         ts: event_log::now_iso8601(),
         project: cfg.project_name.clone(),
         model: "unknown".to_string(),
-        event: if m.state == MissionState::Done { "success".to_string() } else { "failure".to_string() },
+        event: if m.state == MissionState::Done {
+            "success".to_string()
+        } else {
+            "failure".to_string()
+        },
         event_type: "mission".to_string(),
         summary,
         resolution: state_str.to_string(),
@@ -240,7 +257,9 @@ pub fn format_mission_report(mission: &Mission) -> String {
     // Lead with an unmistakable advisory banner. `akar mission` walks the
     // state machine in scaffold mode only — it records a telemetry event and
     // prints strategy, but never executes the task. See v0.22 audit.
-    out.push_str("ADVISORY ONLY — `akar mission` walks the state machine in scaffold mode. It does NOT:\n");
+    out.push_str(
+        "ADVISORY ONLY — `akar mission` walks the state machine in scaffold mode. It does NOT:\n",
+    );
     out.push_str("  - execute code\n");
     out.push_str("  - edit files\n");
     out.push_str("  - call models\n");
@@ -354,13 +373,34 @@ mod tests {
         let report = format_mission_report(&m);
 
         assert!(report.contains("Done."), "report should start with Done.");
-        assert!(report.starts_with("ADVISORY ONLY"), "mission report must lead with advisory banner");
-        assert!(report.contains("- run the mission"), "banner must state it does not run the mission");
-        assert!(report.contains("akar request"), "banner must point to akar request");
-        assert!(report.contains("Mission:"), "report should contain Mission: section");
-        assert!(report.contains("Context:"), "report should contain Context: section");
-        assert!(report.contains("Verified:"), "report should contain Verified: section");
-        assert!(report.contains("Not verified:"), "report should contain Not verified: section");
+        assert!(
+            report.starts_with("ADVISORY ONLY"),
+            "mission report must lead with advisory banner"
+        );
+        assert!(
+            report.contains("- run the mission"),
+            "banner must state it does not run the mission"
+        );
+        assert!(
+            report.contains("akar request"),
+            "banner must point to akar request"
+        );
+        assert!(
+            report.contains("Mission:"),
+            "report should contain Mission: section"
+        );
+        assert!(
+            report.contains("Context:"),
+            "report should contain Context: section"
+        );
+        assert!(
+            report.contains("Verified:"),
+            "report should contain Verified: section"
+        );
+        assert!(
+            report.contains("Not verified:"),
+            "report should contain Not verified: section"
+        );
         assert!(
             report.contains("fix the login bug"),
             "report should echo the prompt"
@@ -384,7 +424,10 @@ mod tests {
     fn run_mission_has_context_pack() {
         let cfg = test_cfg();
         let m = run_mission("add dark mode", &cfg);
-        assert!(m.context_pack.is_some(), "mission should have a context pack");
+        assert!(
+            m.context_pack.is_some(),
+            "mission should have a context pack"
+        );
     }
 
     #[test]
@@ -404,7 +447,13 @@ mod tests {
         m.prompt = "some prompt".to_string();
         let report = format_mission_report(&m);
         // The advisory banner leads, then the state header.
-        assert!(report.contains("Failed."), "report should contain Failed. header");
-        assert!(report.starts_with("ADVISORY ONLY"), "report should lead with advisory banner");
+        assert!(
+            report.contains("Failed."),
+            "report should contain Failed. header"
+        );
+        assert!(
+            report.starts_with("ADVISORY ONLY"),
+            "report should lead with advisory banner"
+        );
     }
 }

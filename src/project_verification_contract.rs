@@ -23,9 +23,7 @@ pub fn detect_project_kind(project_root: &Path) -> ProjectKind {
 // Discovery hints
 // ---------------------------------------------------------------------------
 
-pub use crate::verification_discovery::{
-    discover_verification_hints, VerificationConfidence,
-};
+pub use crate::verification_discovery::{VerificationConfidence, discover_verification_hints};
 
 // ---------------------------------------------------------------------------
 // Build commands

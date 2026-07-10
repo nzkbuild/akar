@@ -65,74 +65,73 @@ pub fn detect_model() -> (String, String) {
 pub fn default_profile(model_id: &str) -> ModelProfile {
     let id = model_id.to_lowercase();
 
-    let (strengths, weaknesses, task_size, autonomy, style, strictness) =
-        if id.contains("opus") {
-            (
-                vec![
-                    "complex reasoning".to_string(),
-                    "long-context synthesis".to_string(),
-                    "multi-step planning".to_string(),
-                ],
-                vec![
-                    "speed on micro tasks".to_string(),
-                    "cost efficiency".to_string(),
-                ],
-                "large".to_string(),
-                "A4".to_string(),
-                "detailed".to_string(),
-                "normal".to_string(),
-            )
-        } else if id.contains("sonnet") {
-            (
-                vec![
-                    "balanced speed and quality".to_string(),
-                    "code generation".to_string(),
-                    "instruction following".to_string(),
-                ],
-                vec!["very long document synthesis".to_string()],
-                "medium".to_string(),
-                "A3".to_string(),
-                "concise".to_string(),
-                "normal".to_string(),
-            )
-        } else if id.contains("haiku") {
-            (
-                vec![
-                    "fast responses".to_string(),
-                    "simple classification".to_string(),
-                    "low-latency pipelines".to_string(),
-                ],
-                vec![
-                    "deep reasoning".to_string(),
-                    "large context tasks".to_string(),
-                ],
-                "micro".to_string(),
-                "A2".to_string(),
-                "concise".to_string(),
-                "strict".to_string(),
-            )
-        } else if id.contains("gpt-4") {
-            (
-                vec![
-                    "instruction following".to_string(),
-                    "structured output".to_string(),
-                ],
-                vec!["very long reasoning chains".to_string()],
-                "medium".to_string(),
-                "A3".to_string(),
-                "concise".to_string(),
-                "normal".to_string(),
-            )
-        } else {
-            (
-                vec!["general text generation".to_string()],
-                vec!["unknown — profile not calibrated".to_string()],
-                "small".to_string(),
-                "A2".to_string(),
-                "concise".to_string(),
-                "strict".to_string(),
-            )
-        };
+    let (strengths, weaknesses, task_size, autonomy, style, strictness) = if id.contains("opus") {
+        (
+            vec![
+                "complex reasoning".to_string(),
+                "long-context synthesis".to_string(),
+                "multi-step planning".to_string(),
+            ],
+            vec![
+                "speed on micro tasks".to_string(),
+                "cost efficiency".to_string(),
+            ],
+            "large".to_string(),
+            "A4".to_string(),
+            "detailed".to_string(),
+            "normal".to_string(),
+        )
+    } else if id.contains("sonnet") {
+        (
+            vec![
+                "balanced speed and quality".to_string(),
+                "code generation".to_string(),
+                "instruction following".to_string(),
+            ],
+            vec!["very long document synthesis".to_string()],
+            "medium".to_string(),
+            "A3".to_string(),
+            "concise".to_string(),
+            "normal".to_string(),
+        )
+    } else if id.contains("haiku") {
+        (
+            vec![
+                "fast responses".to_string(),
+                "simple classification".to_string(),
+                "low-latency pipelines".to_string(),
+            ],
+            vec![
+                "deep reasoning".to_string(),
+                "large context tasks".to_string(),
+            ],
+            "micro".to_string(),
+            "A2".to_string(),
+            "concise".to_string(),
+            "strict".to_string(),
+        )
+    } else if id.contains("gpt-4") {
+        (
+            vec![
+                "instruction following".to_string(),
+                "structured output".to_string(),
+            ],
+            vec!["very long reasoning chains".to_string()],
+            "medium".to_string(),
+            "A3".to_string(),
+            "concise".to_string(),
+            "normal".to_string(),
+        )
+    } else {
+        (
+            vec!["general text generation".to_string()],
+            vec!["unknown — profile not calibrated".to_string()],
+            "small".to_string(),
+            "A2".to_string(),
+            "concise".to_string(),
+            "strict".to_string(),
+        )
+    };
 
     ModelProfile {
         model_id: model_id.to_string(),
@@ -158,11 +157,26 @@ pub fn format_profile(profile: &ModelProfile) -> String {
 
     out.push_str(&format!("model profile: {}\n", profile.model_id));
     out.push_str(&format!("  gateway:              {}\n", profile.gateway));
-    out.push_str(&format!("  best_task_size:       {}\n", profile.best_task_size));
-    out.push_str(&format!("  autonomy_limit:       {}\n", profile.autonomy_limit));
-    out.push_str(&format!("  output_style:         {}\n", profile.output_style));
-    out.push_str(&format!("  verification:         {}\n", profile.verification_strictness));
-    out.push_str(&format!("  last_calibrated:      {}\n", profile.last_calibrated));
+    out.push_str(&format!(
+        "  best_task_size:       {}\n",
+        profile.best_task_size
+    ));
+    out.push_str(&format!(
+        "  autonomy_limit:       {}\n",
+        profile.autonomy_limit
+    ));
+    out.push_str(&format!(
+        "  output_style:         {}\n",
+        profile.output_style
+    ));
+    out.push_str(&format!(
+        "  verification:         {}\n",
+        profile.verification_strictness
+    ));
+    out.push_str(&format!(
+        "  last_calibrated:      {}\n",
+        profile.last_calibrated
+    ));
 
     if !profile.observed_strengths.is_empty() {
         out.push_str("  strengths:\n");

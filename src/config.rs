@@ -130,12 +130,22 @@ pub fn redact(s: &str) -> String {
 
 /// Redact `sk-` prefixed keys.
 fn redact_sk_keys(s: &str) -> String {
-    redact_pattern(s, "sk-", |c: char| c.is_alphanumeric() || c == '_' || c == '-', 16)
+    redact_pattern(
+        s,
+        "sk-",
+        |c: char| c.is_alphanumeric() || c == '_' || c == '-',
+        16,
+    )
 }
 
 /// Redact `Bearer <token>` (case-insensitive via lowercase pre-scan in redact_pattern_ci).
 fn redact_bearer(s: &str) -> String {
-    redact_pattern_ci(s, "bearer ", |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '+' | '/'), 8)
+    redact_pattern_ci(
+        s,
+        "bearer ",
+        |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '+' | '/'),
+        8,
+    )
 }
 
 /// Redact `Authorization: <value>` (case-insensitive).
@@ -145,7 +155,14 @@ fn redact_authorization(s: &str) -> String {
 
 /// Redact `token=X`, `key=X`, `secret=X`, `password=X`, `api_key=X` (case-insensitive).
 fn redact_kv_secrets(s: &str) -> String {
-    let prefixes = ["token=", "key=", "secret=", "password=", "api_key=", "apikey="];
+    let prefixes = [
+        "token=",
+        "key=",
+        "secret=",
+        "password=",
+        "api_key=",
+        "apikey=",
+    ];
     let mut result = s.to_string();
     for prefix in &prefixes {
         // Case-insensitive scan: find lower-case version of prefix
@@ -367,7 +384,7 @@ mod tests {
         // Use dirs that definitely exist on any machine
         let root = std::env::current_dir().unwrap();
         let cfg = Config {
-            akar_dir: root.clone(),   // reuse an existing dir just to pass the check
+            akar_dir: root.clone(), // reuse an existing dir just to pass the check
             global_dir: root.clone(),
             project_name: "test".to_string(),
             project_root: root,

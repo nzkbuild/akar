@@ -72,14 +72,18 @@ pub fn classify_command(command: &str) -> RiskAssessment {
         return RiskAssessment {
             command: command.to_string(),
             risk: CommandRisk::Critical,
-            reason: "destructive filesystem wipe detected — targets root or entire drive".to_string(),
+            reason: "destructive filesystem wipe detected — targets root or entire drive"
+                .to_string(),
             blocked: true,
         };
     }
 
     // Pipe-to-shell patterns: curl ... | bash  or  curl ... | sh
-    if lower.contains("curl") && (lower.contains("| bash") || lower.contains("|bash")
-        || lower.contains("| sh") || lower.contains("|sh"))
+    if lower.contains("curl")
+        && (lower.contains("| bash")
+            || lower.contains("|bash")
+            || lower.contains("| sh")
+            || lower.contains("|sh"))
     {
         return RiskAssessment {
             command: command.to_string(),
@@ -119,10 +123,14 @@ pub fn classify_command(command: &str) -> RiskAssessment {
     if lower.contains("git status")
         || lower.contains("git log")
         || lower.contains("git diff")
-        || lower.contains(" ls") || lower.starts_with("ls")
-        || lower.contains(" dir") || lower.starts_with("dir")
-        || lower.contains(" cat ") || lower.starts_with("cat ")
-        || lower.contains(" read") || lower.starts_with("read")
+        || lower.contains(" ls")
+        || lower.starts_with("ls")
+        || lower.contains(" dir")
+        || lower.starts_with("dir")
+        || lower.contains(" cat ")
+        || lower.starts_with("cat ")
+        || lower.contains(" read")
+        || lower.starts_with("read")
     {
         return RiskAssessment {
             command: command.to_string(),
@@ -149,9 +157,7 @@ pub fn classify_command(command: &str) -> RiskAssessment {
 
     // --- High (not blocked) ---
 
-    if lower.contains("npm install")
-        || lower.contains("cargo add")
-        || lower.contains("pip install")
+    if lower.contains("npm install") || lower.contains("cargo add") || lower.contains("pip install")
     {
         return RiskAssessment {
             command: command.to_string(),
@@ -257,10 +263,9 @@ pub fn govern_dependency(proposal: &DependencyProposal) -> (bool, String) {
                 proposal.name, proposal.reason
             ),
         ),
-        CommandRisk::Medium | CommandRisk::Safe => (
-            true,
-            format!("dependency '{}' approved: ok", proposal.name),
-        ),
+        CommandRisk::Medium | CommandRisk::Safe => {
+            (true, format!("dependency '{}' approved: ok", proposal.name))
+        }
     }
 }
 
@@ -473,7 +478,10 @@ mod tests {
         assert!(!warnings.is_empty());
         // The actual value must not appear in any warning
         for w in &warnings {
-            assert!(!w.contains("hunter2"), "warning must not echo the secret value");
+            assert!(
+                !w.contains("hunter2"),
+                "warning must not echo the secret value"
+            );
         }
     }
 

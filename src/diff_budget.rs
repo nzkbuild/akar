@@ -34,30 +34,24 @@ pub fn baseline_to_json(b: &DiffBaseline) -> String {
           \"budget_files_max\":{bf},\
           \"budget_loc_max\":{bl}\
         }}",
-        ts     = json_escape_simple(&b.timestamp),
+        ts = json_escape_simple(&b.timestamp),
         prompt = json_escape_simple(&b.prompt),
-        head   = json_escape_simple(&b.head_commit),
-        task   = json_escape_simple(&b.task_type),
-        bf     = b.budget_files_max,
-        bl     = b.budget_loc_max,
+        head = json_escape_simple(&b.head_commit),
+        task = json_escape_simple(&b.task_type),
+        bf = b.budget_files_max,
+        bl = b.budget_loc_max,
     )
 }
 
 /// Parse a `DiffBaseline` from a JSON string produced by `baseline_to_json`.
 /// Returns `Err` if any required field is missing or malformed.
 pub fn baseline_from_json(s: &str) -> Result<DiffBaseline, String> {
-    let ts    = extract_json_str(s, "timestamp")
-        .ok_or("missing field: timestamp")?;
-    let prompt = extract_json_str(s, "prompt")
-        .ok_or("missing field: prompt")?;
-    let head  = extract_json_str(s, "head_commit")
-        .ok_or("missing field: head_commit")?;
-    let task  = extract_json_str(s, "task_type")
-        .ok_or("missing field: task_type")?;
-    let bf    = extract_json_num(s, "budget_files_max")
-        .ok_or("missing field: budget_files_max")?;
-    let bl    = extract_json_num(s, "budget_loc_max")
-        .ok_or("missing field: budget_loc_max")?;
+    let ts = extract_json_str(s, "timestamp").ok_or("missing field: timestamp")?;
+    let prompt = extract_json_str(s, "prompt").ok_or("missing field: prompt")?;
+    let head = extract_json_str(s, "head_commit").ok_or("missing field: head_commit")?;
+    let task = extract_json_str(s, "task_type").ok_or("missing field: task_type")?;
+    let bf = extract_json_num(s, "budget_files_max").ok_or("missing field: budget_files_max")?;
+    let bl = extract_json_num(s, "budget_loc_max").ok_or("missing field: budget_loc_max")?;
 
     Ok(DiffBaseline {
         timestamp: ts,
@@ -112,11 +106,11 @@ pub fn read_baseline(akar_dir: &Path) -> Result<DiffBaseline, String> {
     let path = akar_dir.join("DIFF_BASELINE.json");
     if !path.exists() {
         return Err(
-            "no baseline found — run 'akar preflight --snapshot \"<task>\"' first".to_string()
+            "no baseline found — run 'akar preflight --snapshot \"<task>\"' first".to_string(),
         );
     }
-    let s = std::fs::read_to_string(&path)
-        .map_err(|e| format!("could not read baseline: {}", e))?;
+    let s =
+        std::fs::read_to_string(&path).map_err(|e| format!("could not read baseline: {}", e))?;
     baseline_from_json(&s)
 }
 
@@ -143,9 +137,7 @@ pub fn measure_diff_from_commit(repo_root: &Path, base_commit: &str) -> DiffMeas
     let numstat_out = match numstat {
         Err(e) => return DiffMeasurement::unknown(&format!("git diff failed: {}", e)),
         Ok(out) if !out.status.success() => {
-            return DiffMeasurement::unknown(&format!(
-                "git diff {} failed", base_commit
-            ));
+            return DiffMeasurement::unknown(&format!("git diff {} failed", base_commit));
         }
         Ok(out) => String::from_utf8_lossy(&out.stdout).to_string(),
     };
@@ -176,7 +168,9 @@ pub fn measure_diff_from_commit(repo_root: &Path, base_commit: &str) -> DiffMeas
 // ---------------------------------------------------------------------------
 
 fn json_escape_simple(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
 }
 
 fn extract_json_str(s: &str, key: &str) -> Option<String> {
@@ -186,10 +180,16 @@ fn extract_json_str(s: &str, key: &str) -> Option<String> {
     let mut val = String::new();
     let mut escaped = false;
     for c in rest.chars() {
-        if escaped { val.push(c); escaped = false; }
-        else if c == '\\' { escaped = true; }
-        else if c == '"' { break; }
-        else { val.push(c); }
+        if escaped {
+            val.push(c);
+            escaped = false;
+        } else if c == '\\' {
+            escaped = true;
+        } else if c == '"' {
+            break;
+        } else {
+            val.push(c);
+        }
     }
     Some(val)
 }
@@ -198,7 +198,9 @@ fn extract_json_num(s: &str, key: &str) -> Option<usize> {
     let needle = format!("\"{}\":", key);
     let start = s.find(&needle)? + needle.len();
     let rest = s[start..].trim_start();
-    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
     rest[..end].parse().ok()
 }
 
@@ -216,19 +218,21 @@ fn extract_json_num(s: &str, key: &str) -> Option<usize> {
 ///
 /// Returns `Err(String)` with valid options when the name is not recognised.
 pub fn budget_for_task_name(task: &str) -> Result<(usize, usize, &'static str), String> {
-    use crate::contract::{BUDGET_CAP_LARGE, BUDGET_CAP_MEDIUM, BUDGET_CAP_MICRO, BUDGET_CAP_SMALL};
+    use crate::contract::{
+        BUDGET_CAP_LARGE, BUDGET_CAP_MEDIUM, BUDGET_CAP_MICRO, BUDGET_CAP_SMALL,
+    };
     match task.to_lowercase().as_str() {
-        "bugfix" | "bug" | "fix"  => Ok((BUDGET_CAP_MICRO.0,  BUDGET_CAP_MICRO.1,  "Bugfix")),
-        "config"                  => Ok((BUDGET_CAP_MICRO.0,  BUDGET_CAP_MICRO.1,  "Config")),
-        "security" | "sec"        => Ok((BUDGET_CAP_SMALL.0,  BUDGET_CAP_SMALL.1,  "Security")),
-        "dependency" | "dep"      => Ok((BUDGET_CAP_SMALL.0,  BUDGET_CAP_SMALL.1,  "Dependency")),
-        "docs" | "doc"            => Ok((BUDGET_CAP_SMALL.0,  BUDGET_CAP_SMALL.1,  "Docs")),
-        "test" | "tests"          => Ok((BUDGET_CAP_SMALL.0,  BUDGET_CAP_SMALL.1,  "Test")),
-        "feature" | "feat"        => Ok((BUDGET_CAP_MEDIUM.0, BUDGET_CAP_MEDIUM.1, "Feature")),
-        "refactor"                => Ok((BUDGET_CAP_MEDIUM.0, BUDGET_CAP_MEDIUM.1, "Refactor")),
-        "frontend" | "ui"         => Ok((BUDGET_CAP_MEDIUM.0, BUDGET_CAP_MEDIUM.1, "Frontend")),
-        "unknown"                 => Ok((BUDGET_CAP_MEDIUM.0, BUDGET_CAP_MEDIUM.1, "Unknown")),
-        "migration" | "migrate"   => Ok((BUDGET_CAP_LARGE.0,  BUDGET_CAP_LARGE.1,  "Migration")),
+        "bugfix" | "bug" | "fix" => Ok((BUDGET_CAP_MICRO.0, BUDGET_CAP_MICRO.1, "Bugfix")),
+        "config" => Ok((BUDGET_CAP_MICRO.0, BUDGET_CAP_MICRO.1, "Config")),
+        "security" | "sec" => Ok((BUDGET_CAP_SMALL.0, BUDGET_CAP_SMALL.1, "Security")),
+        "dependency" | "dep" => Ok((BUDGET_CAP_SMALL.0, BUDGET_CAP_SMALL.1, "Dependency")),
+        "docs" | "doc" => Ok((BUDGET_CAP_SMALL.0, BUDGET_CAP_SMALL.1, "Docs")),
+        "test" | "tests" => Ok((BUDGET_CAP_SMALL.0, BUDGET_CAP_SMALL.1, "Test")),
+        "feature" | "feat" => Ok((BUDGET_CAP_MEDIUM.0, BUDGET_CAP_MEDIUM.1, "Feature")),
+        "refactor" => Ok((BUDGET_CAP_MEDIUM.0, BUDGET_CAP_MEDIUM.1, "Refactor")),
+        "frontend" | "ui" => Ok((BUDGET_CAP_MEDIUM.0, BUDGET_CAP_MEDIUM.1, "Frontend")),
+        "unknown" => Ok((BUDGET_CAP_MEDIUM.0, BUDGET_CAP_MEDIUM.1, "Unknown")),
+        "migration" | "migrate" => Ok((BUDGET_CAP_LARGE.0, BUDGET_CAP_LARGE.1, "Migration")),
         _ => Err(format!(
             "unknown task type '{}'. Valid values: bugfix, feature, refactor, security, \
              migration, dependency, frontend, docs, test, config, unknown",
@@ -488,8 +492,13 @@ pub fn format_diff_report(report: &DiffReport) -> String {
         }
         BudgetVerdict::Exceeded { reason } => {
             out.push_str(&format!("  status:  EXCEEDED\n  reason:  {}\n", reason));
-            out.push_str("  note:    AKAR measures only — it does not enforce, block, or revert changes\n");
-            out.push_str(&format!("  guidance: {}\n", crate::foundation::budget_exceeded_playbook()));
+            out.push_str(
+                "  note:    AKAR measures only — it does not enforce, block, or revert changes\n",
+            );
+            out.push_str(&format!(
+                "  guidance: {}\n",
+                crate::foundation::budget_exceeded_playbook()
+            ));
         }
         BudgetVerdict::Unknown { reason } => {
             out.push_str(&format!("  status:  UNKNOWN\n  reason:  {}\n", reason));
@@ -550,7 +559,11 @@ pub fn check_loop_readiness(repo_root: &Path, akar_dir: &Path) -> LoopReadinessR
             git_repo_detected: true,
             working_tree_clean: Some(clean),
             baseline_file_present,
-            readiness: if clean { LoopReadiness::Ready } else { LoopReadiness::Blocked },
+            readiness: if clean {
+                LoopReadiness::Ready
+            } else {
+                LoopReadiness::Blocked
+            },
         },
     }
 }
@@ -707,7 +720,9 @@ mod tests {
     fn format_unknown_report() {
         let report = DiffReport {
             measurement: DiffMeasurement::unknown("git not found"),
-            verdict: BudgetVerdict::Unknown { reason: "git not found".to_string() },
+            verdict: BudgetVerdict::Unknown {
+                reason: "git not found".to_string(),
+            },
             budget_files_max: 5,
             budget_loc_max: 200,
             task_type: "Bugfix".to_string(),
@@ -906,12 +921,32 @@ mod tests {
 
     fn make_clean_git_repo(dir: &std::path::Path) {
         use std::process::Command;
-        Command::new("git").args(["init"]).current_dir(dir).output().unwrap();
-        Command::new("git").args(["config", "user.email", "t@t.com"]).current_dir(dir).output().unwrap();
-        Command::new("git").args(["config", "user.name", "T"]).current_dir(dir).output().unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "t@t.com"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "T"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
         std::fs::write(dir.join("seed.txt"), "seed").unwrap();
-        Command::new("git").args(["add", "seed.txt"]).current_dir(dir).output().unwrap();
-        Command::new("git").args(["commit", "-m", "init"]).current_dir(dir).output().unwrap();
+        Command::new("git")
+            .args(["add", "seed.txt"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
     }
 
     #[test]
@@ -991,8 +1026,7 @@ mod tests {
         // The audit report must say partial evidence, not claim a full verified loop.
         let report_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("docs/audits/AKAR_V0_7_VERIFIED_SESSION_REPORT.md");
-        let content = std::fs::read_to_string(&report_path)
-            .expect("audit report must exist");
+        let content = std::fs::read_to_string(&report_path).expect("audit report must exist");
         assert!(
             content.contains("PARTIAL EVIDENCE"),
             "report must contain PARTIAL EVIDENCE"

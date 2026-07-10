@@ -2,9 +2,9 @@
 //!
 //! Does not invent evidence. Only summarizes what the event log actually contains.
 
-use std::path::Path;
 use crate::config;
 use crate::event_log;
+use std::path::Path;
 
 // ---------------------------------------------------------------------------
 // Outcome classification
@@ -67,21 +67,26 @@ pub fn run_postmortem(log_path: &Path) -> PostmortemReport {
     }
 
     // Filter to mission events only.
-    let mission_lines: Vec<&String> = summary.recent.iter()
+    let mission_lines: Vec<&String> = summary
+        .recent
+        .iter()
         .filter(|l| l.contains("\"event_type\":\"mission\""))
         .collect();
 
     let mission_count = mission_lines.len();
 
     // Grab latest mission line for preview.
-    let latest_summary = mission_lines.last().map(|l| {
-        // Extract the summary field value from JSON.
-        extract_json_field(l, "summary")
-            .unwrap_or_else(|| truncate(l, 100))
-    }).map(|s| config::redact(&s));
+    let latest_summary = mission_lines
+        .last()
+        .map(|l| {
+            // Extract the summary field value from JSON.
+            extract_json_field(l, "summary").unwrap_or_else(|| truncate(l, 100))
+        })
+        .map(|s| config::redact(&s));
 
     // Classify outcome from the latest mission event.
-    let latest_outcome = mission_lines.last()
+    let latest_outcome = mission_lines
+        .last()
         .map(|l| classify_outcome(l))
         .unwrap_or(Outcome::Unknown);
 
@@ -101,13 +106,16 @@ pub fn run_postmortem(log_path: &Path) -> PostmortemReport {
             follow_up.push("add a learning patch to .akar/LESSONS.md".to_string());
         }
         Outcome::Unknown => {
-            follow_up.push("run 'akar mission \"<prompt>\"' to generate a reviewed event".to_string());
+            follow_up
+                .push("run 'akar mission \"<prompt>\"' to generate a reviewed event".to_string());
         }
     }
 
     // Detect warnings: failures in the event log.
     let mut warnings = Vec::new();
-    let failure_count = summary.recent.iter()
+    let failure_count = summary
+        .recent
+        .iter()
         .filter(|l| l.contains("\"event\":\"failure\""))
         .count();
     if failure_count > 0 {
@@ -259,7 +267,12 @@ mod tests {
     fn postmortem_summarizes_one_event() {
         let path = tmp_log("one");
         let _ = fs::remove_file(&path);
-        write_event(&path, "success", "mission", "mission/done task=Bugfix risk=Low autonomy=A5 warnings=0 prompt=fix button");
+        write_event(
+            &path,
+            "success",
+            "mission",
+            "mission/done task=Bugfix risk=Low autonomy=A5 warnings=0 prompt=fix button",
+        );
         let report = run_postmortem(&path);
         assert!(report.exists);
         assert_eq!(report.total_events, 1);
@@ -271,9 +284,24 @@ mod tests {
     fn postmortem_summarizes_multiple_events() {
         let path = tmp_log("multi");
         let _ = fs::remove_file(&path);
-        write_event(&path, "success", "mission", "mission/done task=Bugfix risk=Low autonomy=A5 warnings=0 prompt=fix a");
-        write_event(&path, "success", "mission", "mission/done task=Feature risk=Low autonomy=A5 warnings=0 prompt=add b");
-        write_event(&path, "failure", "mission", "mission/failed task=Feature risk=High autonomy=A5 warnings=2 prompt=risky c");
+        write_event(
+            &path,
+            "success",
+            "mission",
+            "mission/done task=Bugfix risk=Low autonomy=A5 warnings=0 prompt=fix a",
+        );
+        write_event(
+            &path,
+            "success",
+            "mission",
+            "mission/done task=Feature risk=Low autonomy=A5 warnings=0 prompt=add b",
+        );
+        write_event(
+            &path,
+            "failure",
+            "mission",
+            "mission/failed task=Feature risk=High autonomy=A5 warnings=2 prompt=risky c",
+        );
         let report = run_postmortem(&path);
         assert_eq!(report.total_events, 3);
         assert_eq!(report.mission_count, 3);
@@ -284,7 +312,12 @@ mod tests {
     fn postmortem_classifies_clean_outcome() {
         let path = tmp_log("clean");
         let _ = fs::remove_file(&path);
-        write_event(&path, "success", "mission", "mission/done task=Bugfix risk=Low autonomy=A5 warnings=0 prompt=fix btn");
+        write_event(
+            &path,
+            "success",
+            "mission",
+            "mission/done task=Bugfix risk=Low autonomy=A5 warnings=0 prompt=fix btn",
+        );
         let report = run_postmortem(&path);
         assert_eq!(report.latest_outcome, Outcome::Clean);
         let _ = fs::remove_file(&path);
@@ -294,7 +327,12 @@ mod tests {
     fn postmortem_classifies_failed_outcome() {
         let path = tmp_log("failed");
         let _ = fs::remove_file(&path);
-        write_event(&path, "failure", "mission", "mission/failed task=Feature risk=High autonomy=A5 warnings=3 prompt=bad");
+        write_event(
+            &path,
+            "failure",
+            "mission",
+            "mission/failed task=Feature risk=High autonomy=A5 warnings=3 prompt=bad",
+        );
         let report = run_postmortem(&path);
         assert_eq!(report.latest_outcome, Outcome::Failed);
         assert!(!report.warnings.is_empty());
@@ -305,7 +343,12 @@ mod tests {
     fn postmortem_classifies_degraded_outcome() {
         let path = tmp_log("degraded");
         let _ = fs::remove_file(&path);
-        write_event(&path, "success", "mission", "mission/done task=Bugfix risk=Low autonomy=A5 warnings=2 prompt=fix x");
+        write_event(
+            &path,
+            "success",
+            "mission",
+            "mission/done task=Bugfix risk=Low autonomy=A5 warnings=2 prompt=fix x",
+        );
         let report = run_postmortem(&path);
         assert_eq!(report.latest_outcome, Outcome::Degraded);
         let _ = fs::remove_file(&path);
@@ -315,10 +358,18 @@ mod tests {
     fn postmortem_redacts_secret_looking_values() {
         let path = tmp_log("redact");
         let _ = fs::remove_file(&path);
-        write_event(&path, "success", "mission", "mission/done prompt=token=sk-abc123secretvalue warnings=0");
+        write_event(
+            &path,
+            "success",
+            "mission",
+            "mission/done prompt=token=sk-abc123secretvalue warnings=0",
+        );
         let report = run_postmortem(&path);
         if let Some(s) = &report.latest_summary {
-            assert!(!s.contains("sk-abc123"), "secret should be redacted in summary");
+            assert!(
+                !s.contains("sk-abc123"),
+                "secret should be redacted in summary"
+            );
         }
         let _ = fs::remove_file(&path);
     }
@@ -336,7 +387,12 @@ mod tests {
     fn format_postmortem_report_with_events() {
         let path = tmp_log("fmt_events");
         let _ = fs::remove_file(&path);
-        write_event(&path, "success", "mission", "mission/done task=Bugfix risk=Low autonomy=A5 warnings=0 prompt=fix btn");
+        write_event(
+            &path,
+            "success",
+            "mission",
+            "mission/done task=Bugfix risk=Low autonomy=A5 warnings=0 prompt=fix btn",
+        );
         let report = run_postmortem(&path);
         let out = format_postmortem_report(&report);
         assert!(out.contains("postmortem:"));
