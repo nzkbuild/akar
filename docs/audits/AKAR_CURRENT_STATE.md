@@ -13,7 +13,7 @@ Consolidated snapshot for future prompts. See the source audit docs for full det
 
 | Check | Value |
 |---|---|
-| Commit | (pending) |
+| Commit | `a7b12a8` — docs: record AKAR v0.56 external benchmark results |
 | Version | `akar 0.56.0` |
 | `cargo test` | 642 passed, 1 failed (pre-existing: HOOK_EVENTS.jsonl line 972) |
 | `cargo build --release` | Clean |
@@ -89,7 +89,7 @@ The only remaining manual step is `akar finish` at session end.
 4. settings.local.json merge produces working but not pretty-printed JSON (functional, backed up)
 5. Live multi-host support not implemented
 6. MCP/skill/plugin routing not implemented
-7. Token/request reduction — benchmark matrix designed, not yet executed (ready for external model runs)
+7. Token/request reduction — benchmark matrix and runner script ready; automated execution failed (--print mode unreliable); requires interactive sessions (see `AKAR_V0_56_CAPABILITY_AWARE_BENCHMARK_RUNTIME_AUDIT.md`)
 
 ## Code Map
 

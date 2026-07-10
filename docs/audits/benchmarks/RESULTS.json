@@ -1,0 +1,102 @@
+{
+  "benchmark": "AKAR v0.56 Capability Awareness",
+  "date": "2026-07-11",
+  "fixture": "redirect-validator",
+  "known_defects": 3,
+  "prompt": "Fix the redirect validation bug in this project.",
+  "conditions": [
+    {
+      "clone": "A",
+      "model": "haiku-4.5",
+      "akar": "disabled",
+      "executed": true,
+      "mode": "bare (hooks suppressed)",
+      "changes_made": false,
+      "defects_fixed": 0,
+      "defects_found": 0,
+      "stage1_pass": 11,
+      "stage1_total": 11,
+      "stage2_pass": 5,
+      "stage2_total": 5,
+      "stage2_defects_flagged": 5,
+      "diff_files_changed": 0,
+      "diff_insertions": 0,
+      "diff_deletions": 0,
+      "notes": "Haiku in --print mode read files but made no edits. The --bare flag also suppressed hooks, which was the intended treatment for this clone (no AKAR). However, reliable output capture in --print mode was not achieved."
+    },
+    {
+      "clone": "B",
+      "model": "haiku-4.5",
+      "akar": "enabled",
+      "executed": true,
+      "mode": "print (hook configured, bare suppressed it)",
+      "changes_made": false,
+      "defects_fixed": 0,
+      "defects_found": 0,
+      "stage1_pass": 11,
+      "stage1_total": 11,
+      "stage2_pass": 5,
+      "stage2_total": 5,
+      "stage2_defects_flagged": 5,
+      "diff_files_changed": 0,
+      "diff_insertions": 0,
+      "diff_deletions": 0,
+      "notes": "AKAR hook was configured but --bare flag in the first batch disabled all hooks. Relaunch timed out (180s). Haiku in --print mode did not make edits. Hooks cannot be verified as active in this mode."
+    },
+    {
+      "clone": "C",
+      "model": "sonnet-5",
+      "akar": "disabled",
+      "executed": true,
+      "mode": "bare (hooks suppressed)",
+      "changes_made": false,
+      "defects_fixed": 0,
+      "defects_found": 0,
+      "stage1_pass": 11,
+      "stage1_total": 11,
+      "stage2_pass": 5,
+      "stage2_total": 5,
+      "stage2_defects_flagged": 5,
+      "diff_files_changed": 0,
+      "diff_insertions": 0,
+      "diff_deletions": 0,
+      "notes": "Same --bare batch. Sonnet in --print mode read files but made no edits. No changes to any files."
+    },
+    {
+      "clone": "D",
+      "model": "sonnet-5",
+      "akar": "enabled",
+      "executed": true,
+      "mode": "print (hook configured, hooks likely suppressed in --bare batch)",
+      "changes_made": true,
+      "defects_fixed": 2,
+      "defects_missed": 1,
+      "stage1_pass": 12,
+      "stage1_total": 12,
+      "stage2_pass": 2,
+      "stage2_total": 5,
+      "stage2_defects_flagged": 2,
+      "diff_files_changed": 2,
+      "diff_insertions": 16,
+      "diff_deletions": 20,
+      "validator_changes": [
+        "every→some (correct)",
+        "empty allow-list guard (correct: !allowedHosts.length)",
+        "CRLF strip in locationHeader (correct: .replace(/[\\r\\n]/g, ''))"
+      ],
+      "test_changes": "Updated Stage 1 tests to expect fixed behavior (example.com accepted, empty allow-list rejected). Audit tests left unchanged.",
+      "note": "Audit tests still fail because tests.js was updated to reflect fixes but audit-tests.js was NOT updated — it still expects the OLD buggy behavior. This is actually correct: the audit tests are DESIGNED to fail on buggy code, and since clone D fixed the bugs, the audit tests now fail because they assert buggy behavior. The Stage 2 tests need a corresponding update that the model didn't complete."
+    }
+  ],
+  "automation_viability": {
+    "print_mode_edits": "UNRELIABLE — Haiku did not edit; Sonnet edited in some cases but only when --bare was used",
+    "hook_firing_in_print": "UNKNOWN — --bare suppressed hooks by design; non-bare runs timed out",
+    "output_capture": "BROKEN — tee produced 0-byte files; output format unreliable",
+    "verdict": "NOT SAFE for automated execution. Interactive sessions required."
+  },
+  "manual_work_budget_consumed": {
+    "external_model_runs": 8,
+    "useful_runs": 1,
+    "user_copy_paste_cycles": 0
+  }
+}
