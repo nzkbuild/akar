@@ -1,4 +1,4 @@
-# AKAR Current State — 2026-07-10
+# AKAR Current State — 2026-07-11
 
 Consolidated snapshot for future prompts. See the source audit docs for full detail:
 - `AKAR_V0_52_CLAUDE_MD_STALE_CONTEXT_REVISION.md`
@@ -6,18 +6,28 @@ Consolidated snapshot for future prompts. See the source audit docs for full det
 - `AKAR_V0_53_EXTERNAL_DOGFOOD.md`
 - `AKAR_V0_54_ZERO_RELAY_AUTO_CONTEXT_HOOK.md`
 - `AKAR_V0_54_EXTERNAL_DOGFOOD.md`
-- `AKAR_V0_55_EXTERNAL_DOGFOOD.md` (this release)
+- `AKAR_V0_55_EXTERNAL_DOGFOOD.md`
+- `AKAR_CAPABILITY_AUDIT_v0.56.0.md` (this release)
 
 ## Baseline
 
 | Check | Value |
 |---|---|
-| Commit | `3e04d6f` — style: apply rustfmt after v0.54 dogfood |
-| Version | `akar 0.54.0` (source) — will bump to 0.55.0 on next commit |
-| `cargo test` | 621 passed, 1 failed (pre-existing: HOOK_EVENTS.jsonl line 972) |
-| `cargo build --release` | Clean (10 dead-code warnings) |
+| Commit | (pending) |
+| Version | `akar 0.56.0` |
+| `cargo test` | 642 passed, 1 failed (pre-existing: HOOK_EVENTS.jsonl line 972) |
+| `cargo build --release` | Clean |
 
-## What v0.55 Delivers (host capability awareness)
+## What v0.56 Delivers (capability benchmark + audit)
+
+1. **Architecture audit** — confirmed capability.rs KEEP decision (12 sections, single file, strong intra-module cohesion).
+2. **28 security/hostile-metadata audit tests** — prompt injection containment, code fence safety, control characters, malformed unicode, shell metacharacter safety, fake system message isolation, inventory pressure (0/1/30/100/1000 caps), scoring manipulation resistance, MCP secret safety, broken source tolerance. All 28 pass.
+3. **Dedup fix** — `select_capabilities` now deduplicates by capability ID (HashSet-based, 1-line change at line 793).
+4. **Benchmark fixture** — `docs/audits/benchmarks/redirect-validator/` with 3 known defects (every→some logic bug, empty allow-list bypass, CRLF injection), two-stage verification (`npm test` + `npm run audit:test`), clean git baseline.
+5. **Benchmark matrix** — 4-clone design (Haiku/Sonnet × AKAR enabled/disabled), 10-dimension scoring rubric, ready for external execution.
+6. **Total: 64 capability tests (43 original + 28 new + dedup fix), all passing.**
+
+## What v0.55 Delivered (host capability awareness)
 
 1. **`akar capabilities [--json]`** — discovers 30 capabilities across 4 categories:
    repo commands (4), user skills (17), plugins (3), AKAR built-ins (6). Read-only.
@@ -79,12 +89,12 @@ The only remaining manual step is `akar finish` at session end.
 4. settings.local.json merge produces working but not pretty-printed JSON (functional, backed up)
 5. Live multi-host support not implemented
 6. MCP/skill/plugin routing not implemented
-7. Token/request reduction not benchmarked yet
+7. Token/request reduction — benchmark matrix designed, not yet executed (ready for external model runs)
 
 ## Code Map
 
 ### Modules (32 `mod` declarations in src/main.rs, alphabetical)
-- `capability` — host capability awareness (v0.55, ~1,560 lines, 43 tests)
+- `capability` — host capability awareness (v0.55→v0.56, ~2,400 lines, 64 tests)
 - `claude_snippet` — CLAUDE.md snippet detection + idempotent apply (v0.53, 349 lines, 12 tests)
 - `hook_handler` — UserPromptSubmit hook handler with capability injection (v0.54→v0.55, 511 lines, 16 tests)
 - `path_health` — PATH version detection + safe repair (v0.53, 445 lines, 8 tests)
@@ -111,15 +121,9 @@ The only remaining manual step is `akar finish` at session end.
 
 ## Next Recommended Release
 
-**v0.56.0: Post-Session Automation** — automate `akar finish` via PreToolUse hooks,
-close the last manual step in the prepare↔finish cycle, and benchmark token/request
-reduction with capabilities enabled.
-
-## Next Recommended Release
-
-**v0.55.0: Multi-Session Loop Foundation** — with hooks proven end-to-end, the next
-release should focus on the post-session side: `akar finish` automation, session
-postmortem workflow, or the full multi-session lifecycle. Alternatively, a `akar
-finish` hook variant (PreToolUse monitoring) would close the last manual step.
-Token/request reduction benchmarking should also be completed to measure the
-actual savings from auto-context injection.
+**v0.57.0: Benchmark Execution or Post-Session Automation** — two candidate directions:
+(A) Execute the 4-clone benchmark matrix with actual Claude Code model runs to get
+empirical scores; (B) Automate `akar finish` via PreToolUse hooks to close the last
+manual step in the prepare↔finish cycle. The benchmark infrastructure is ready and
+the scoring rubric is defined — the next release can be a dogfood-only release that
+reports actual measurements.

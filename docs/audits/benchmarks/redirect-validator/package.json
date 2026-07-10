@@ -1,0 +1,9 @@
+{
+  "name": "redirect-validator",
+  "version": "1.0.0",
+  "description": "Benchmark fixture: HTTP redirect validation with known defects",
+  "scripts": {
+    "test": "node src/tests.js",
+    "audit:test": "node src/audit-tests.js"
+  }
+}

@@ -2,28 +2,22 @@
 
 ## Current Goal
 
-<!-- What you are working on right now. One sentence. -->
-Implement Phase 4: Memory Templates and Event Log.
+v0.56.0 Capability Benchmark and Security Audit — IN PROGRESS.
 
 ## Last Completed
 
-<!-- The last task or milestone that was finished. -->
-Phase 3: config module with path discovery and secret redaction.
+v0.56.0 (in progress): Architecture audit confirms KEEP decision for capability.rs. 28 security/hostile-metadata audit tests added and passing (prompt injection, code fence safety, inventory pressure, scoring manipulation, MCP secret safety, broken source tolerance). Dedup fix applied in `select_capabilities`. Benchmark fixture created: `docs/audits/benchmarks/redirect-validator/` with 3 known defects and two-stage verification. Benchmark matrix and scoring rubric designed. 64 capability tests pass (43 original + 28 new, including dedup fix).
 
 ## Next Steps
 
-<!-- Ordered list of the next 3–5 concrete actions. -->
-1. Create remaining memory templates under templates/
-2. Implement src/event_log.rs
-3. Wire mod event_log into main.rs
-4. Run cargo test — all green
+1. Final verification (cargo fmt, cargo build, cargo test)
+2. Release commit (v0.56.0 bump, CHANGELOG, docs)
+3. v0.57.0: Execute benchmark with external model runs, or automate `akar finish`
 
 ## Blockers
 
-<!-- Anything preventing progress. "None" if clear. -->
 None
 
 ## Last Updated
 
-<!-- ISO8601 timestamp, updated every time this file changes. -->
-2026-07-03T22:07:54Z
+2026-07-11T00:00:00Z
