@@ -129,16 +129,36 @@ pub struct Check {
 
 impl Check {
     fn pass(label: &str, detail: &str) -> Self {
-        Check { label: label.to_string(), outcome: CheckOutcome::Pass, detail: detail.to_string(), fix_hint: None }
+        Check {
+            label: label.to_string(),
+            outcome: CheckOutcome::Pass,
+            detail: detail.to_string(),
+            fix_hint: None,
+        }
     }
     fn warn(label: &str, detail: &str) -> Self {
-        Check { label: label.to_string(), outcome: CheckOutcome::Warn, detail: detail.to_string(), fix_hint: None }
+        Check {
+            label: label.to_string(),
+            outcome: CheckOutcome::Warn,
+            detail: detail.to_string(),
+            fix_hint: None,
+        }
     }
     fn warn_fixable(label: &str, detail: &str, fix: FixHint) -> Self {
-        Check { label: label.to_string(), outcome: CheckOutcome::Warn, detail: detail.to_string(), fix_hint: Some(fix) }
+        Check {
+            label: label.to_string(),
+            outcome: CheckOutcome::Warn,
+            detail: detail.to_string(),
+            fix_hint: Some(fix),
+        }
     }
     fn fail(label: &str, detail: &str) -> Self {
-        Check { label: label.to_string(), outcome: CheckOutcome::Fail, detail: detail.to_string(), fix_hint: None }
+        Check {
+            label: label.to_string(),
+            outcome: CheckOutcome::Fail,
+            detail: detail.to_string(),
+            fix_hint: None,
+        }
     }
 }
 
@@ -153,6 +173,8 @@ pub struct DoctorReport {
     pub git: Vec<Check>,
     pub next_run: Vec<Check>,
     pub verification_hints: Vec<Check>,
+    pub claude_snippet: Vec<Check>,
+    pub path_health: Vec<Check>,
     pub recommendations: Vec<String>,
 }
 
@@ -189,14 +211,20 @@ impl DoctorReport {
         v.extend(self.git.iter());
         v.extend(self.next_run.iter());
         v.extend(self.verification_hints.iter());
+        v.extend(self.claude_snippet.iter());
+        v.extend(self.path_health.iter());
         v
     }
 
     fn has_fail(&self) -> bool {
-        self.all_checks().iter().any(|c| c.outcome == CheckOutcome::Fail)
+        self.all_checks()
+            .iter()
+            .any(|c| c.outcome == CheckOutcome::Fail)
     }
     fn has_warn(&self) -> bool {
-        self.all_checks().iter().any(|c| c.outcome == CheckOutcome::Warn)
+        self.all_checks()
+            .iter()
+            .any(|c| c.outcome == CheckOutcome::Warn)
     }
 }
 
@@ -214,6 +242,8 @@ pub fn run_doctor_report(cfg: &crate::config::Config) -> DoctorReport {
     let git = check_git(cfg);
     let next_run = check_next_run(cfg);
     let verification_hints = check_verification_hints(cfg);
+    let claude_snippet = check_claude_snippet(cfg);
+    let path_health = check_path_health_section();
 
     let mut report = DoctorReport {
         status: DoctorStatus::Ok,
@@ -224,6 +254,8 @@ pub fn run_doctor_report(cfg: &crate::config::Config) -> DoctorReport {
         git,
         next_run,
         verification_hints,
+        claude_snippet,
+        path_health,
         recommendations: Vec::new(),
     };
 
@@ -286,7 +318,10 @@ fn check_environment(cfg: &crate::config::Config) -> Vec<Check> {
         // `doctor --fix` can also create it (the one safe fix available).
         out.push(Check::warn_fixable(
             ".akar/ directory",
-            &format!("missing — run 'akar bootstrap' to create {}", cfg.akar_dir.display()),
+            &format!(
+                "missing — run 'akar bootstrap' to create {}",
+                cfg.akar_dir.display()
+            ),
             FixHint::CreateDir(cfg.akar_dir.clone()),
         ));
     }
@@ -367,7 +402,10 @@ fn check_files(cfg: &crate::config::Config) -> Vec<Check> {
         match crate::diff_budget::read_baseline(&cfg.akar_dir) {
             Ok(b) => out.push(Check::pass(
                 "DIFF_BASELINE.json",
-                &format!("valid; head {} ({} files, {} LOC)", b.head_commit, b.budget_files_max, b.budget_loc_max),
+                &format!(
+                    "valid; head {} ({} files, {} LOC)",
+                    b.head_commit, b.budget_files_max, b.budget_loc_max
+                ),
             )),
             Err(e) => out.push(Check::fail(
                 "DIFF_BASELINE.json",
@@ -419,10 +457,7 @@ fn check_hooks_section(cfg: &crate::config::Config) -> Vec<Check> {
     let result = crate::hooks::check_hooks(cfg);
     let mut out = Vec::new();
 
-    let source_label = result
-        .source
-        .map(|s| s.as_str())
-        .unwrap_or("none");
+    let source_label = result.source.map(|s| s.as_str()).unwrap_or("none");
 
     // Template presence + validity.
     if result.all_valid {
@@ -436,7 +471,10 @@ fn check_hooks_section(cfg: &crate::config::Config) -> Vec<Check> {
         ));
     } else if result.templates_missing.is_empty() {
         // Should not happen, but be defensive.
-        out.push(Check::fail("hook templates", "check returned no templates and no missing entries"));
+        out.push(Check::fail(
+            "hook templates",
+            "check returned no templates and no missing entries",
+        ));
     } else {
         out.push(Check::fail(
             "hook templates",
@@ -453,6 +491,127 @@ fn check_hooks_section(cfg: &crate::config::Config) -> Vec<Check> {
         "Claude settings wiring",
         "manual — AKAR does not edit ~/.claude/settings.json; run `akar hooks` for instructions",
     ));
+
+    out
+}
+
+/// CLAUDE.md snippet health check. Read-only.
+fn check_claude_snippet(cfg: &crate::config::Config) -> Vec<Check> {
+    let state = crate::claude_snippet::detect_snippet_state(&cfg.project_root);
+    let path = crate::claude_snippet::claude_md_path(&cfg.project_root);
+    let mut out = Vec::new();
+
+    match state {
+        crate::claude_snippet::SnippetState::Absent => {
+            out.push(Check::warn(
+                "CLAUDE.md snippet",
+                &format!(
+                    "not found at {} — run 'akar init --claude' to add",
+                    path.display()
+                ),
+            ));
+        }
+        crate::claude_snippet::SnippetState::PresentNoBlock => {
+            out.push(Check::warn(
+                "CLAUDE.md snippet",
+                &format!(
+                    "CLAUDE.md exists at {} but has no AKAR snippet — run 'akar init --claude'",
+                    path.display()
+                ),
+            ));
+        }
+        crate::claude_snippet::SnippetState::PresentWithBlock => {
+            out.push(Check::pass(
+                "CLAUDE.md snippet",
+                &format!("installed at {}", path.display()),
+            ));
+        }
+        crate::claude_snippet::SnippetState::Outdated => {
+            out.push(Check::warn(
+                "CLAUDE.md snippet",
+                &format!(
+                    "outdated at {} — run 'akar init --claude' to update",
+                    path.display()
+                ),
+            ));
+        }
+        crate::claude_snippet::SnippetState::Duplicate => {
+            out.push(Check::warn(
+                "CLAUDE.md snippet",
+                &format!(
+                    "duplicate AKAR blocks at {} — run 'akar init --claude' to repair",
+                    path.display()
+                ),
+            ));
+        }
+    }
+
+    out
+}
+
+/// PATH health check. Read-only.
+fn check_path_health_section() -> Vec<Check> {
+    let health = crate::path_health::check_path_health();
+    let mut out = Vec::new();
+
+    out.push(Check::pass(
+        "running akar",
+        &format!(
+            "{} (v{})",
+            health.running_path.display(),
+            health.running_version
+        ),
+    ));
+
+    match health.status {
+        crate::path_health::PathHealthStatus::Healthy => {
+            out.push(Check::pass(
+                "akar on PATH",
+                &format!(
+                    "OK — {}",
+                    health
+                        .path_akar
+                        .as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| "same as running".to_string())
+                ),
+            ));
+        }
+        crate::path_health::PathHealthStatus::Missing => {
+            out.push(Check::warn(
+                "akar on PATH",
+                "not found on PATH — hooks may fail open; run 'akar init' to repair",
+            ));
+        }
+        crate::path_health::PathHealthStatus::Mismatch => {
+            out.push(Check::warn(
+                "akar on PATH",
+                &format!(
+                    "version mismatch: running v{} vs PATH v{} at {}",
+                    health.running_version,
+                    health.path_version.as_deref().unwrap_or("unknown"),
+                    health
+                        .path_akar
+                        .as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default(),
+                ),
+            ));
+        }
+        crate::path_health::PathHealthStatus::UnknownVersion => {
+            out.push(Check::warn(
+                "akar on PATH",
+                &format!(
+                    "found at {} but could not determine version",
+                    health
+                        .path_akar
+                        .as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default(),
+                ),
+            ));
+        }
+    }
 
     out
 }
@@ -514,7 +673,10 @@ fn check_jsonl_file(label: &str, path: &Path, absent_is_fail: bool) -> Check {
             );
         }
     }
-    Check::pass(&full_label, &format!("{} event line(s) parseable", total_lines))
+    Check::pass(
+        &full_label,
+        &format!("{} event line(s) parseable", total_lines),
+    )
 }
 
 /// Structural JSON-object validator. Returns `Ok(())` if `s` is a single JSON
@@ -587,10 +749,14 @@ fn check_git(cfg: &crate::config::Config) -> Vec<Check> {
         crate::project_detection::ProjectKind::Rust => {
             out.push(Check::pass(
                 "project kind",
-                &format!("{} (Cargo.toml) — 'akar verify' runs cargo build + cargo test", kind.label()),
+                &format!(
+                    "{} (Cargo.toml) — 'akar verify' runs cargo build + cargo test",
+                    kind.label()
+                ),
             ));
         }
-        crate::project_detection::ProjectKind::Node | crate::project_detection::ProjectKind::Python => {
+        crate::project_detection::ProjectKind::Node
+        | crate::project_detection::ProjectKind::Python => {
             out.push(Check::pass(
                 "project kind",
                 &format!("{} — NEXT_RUN uses project-appropriate commands; 'akar verify' automated execution is Rust/Cargo-only", kind.label()),
@@ -732,6 +898,14 @@ pub fn format_doctor_report(report: &DoctorReport) -> String {
     out.push_str(&format_checks(&report.verification_hints));
     out.push('\n');
 
+    out.push_str("claude.md snippet:\n");
+    out.push_str(&format_checks(&report.claude_snippet));
+    out.push('\n');
+
+    out.push_str("path health:\n");
+    out.push_str(&format_checks(&report.path_health));
+    out.push('\n');
+
     out.push_str("recommendations:\n");
     for r in &report.recommendations {
         out.push_str(&format!("  - {}\n", r));
@@ -778,11 +952,8 @@ mod tests {
 
     /// Build a config whose `akar_dir` is a fresh temp `.akar/` we control.
     fn cfg_with_temp_akar(label: &str) -> (crate::config::Config, PathBuf) {
-        let dir = std::env::temp_dir().join(format!(
-            "akar_doctor_{}_{}",
-            label,
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("akar_doctor_{}_{}", label, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let cfg = crate::config::Config {
@@ -812,7 +983,10 @@ mod tests {
             .find(|c| c.label == ".akar/ directory")
             .unwrap();
         assert_eq!(env_akar.outcome, CheckOutcome::Warn);
-        assert!(env_akar.fix_hint.is_some(), "missing .akar/ should offer a CreateDir fix");
+        assert!(
+            env_akar.fix_hint.is_some(),
+            "missing .akar/ should offer a CreateDir fix"
+        );
     }
 
     #[test]
@@ -843,19 +1017,43 @@ mod tests {
         let (cfg, dir) = cfg_with_temp_akar("missing_nextrun");
         // No NEXT_RUN.md present — fresh project, expected.
         let report = run_doctor_report(&cfg);
-        assert_ne!(report.status, DoctorStatus::Fail, "missing NEXT_RUN must not FAIL");
-        let nr = report.next_run.iter().find(|c| c.label == "NEXT_RUN.md valid").unwrap();
-        assert_eq!(nr.outcome, CheckOutcome::Pass, "missing NEXT_RUN on fresh project should PASS");
+        assert_ne!(
+            report.status,
+            DoctorStatus::Fail,
+            "missing NEXT_RUN must not FAIL"
+        );
+        let nr = report
+            .next_run
+            .iter()
+            .find(|c| c.label == "NEXT_RUN.md valid")
+            .unwrap();
+        assert_eq!(
+            nr.outcome,
+            CheckOutcome::Pass,
+            "missing NEXT_RUN on fresh project should PASS"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn invalid_next_run_is_fail() {
         let (cfg, dir) = cfg_with_temp_akar("invalid_nextrun");
-        std::fs::write(dir.join("NEXT_RUN.md"), "# not the compiled prompt\nno sections here\n").unwrap();
+        std::fs::write(
+            dir.join("NEXT_RUN.md"),
+            "# not the compiled prompt\nno sections here\n",
+        )
+        .unwrap();
         let report = run_doctor_report(&cfg);
-        assert_eq!(report.status, DoctorStatus::Fail, "invalid NEXT_RUN must FAIL");
-        let nr = report.next_run.iter().find(|c| c.label == "NEXT_RUN.md valid").unwrap();
+        assert_eq!(
+            report.status,
+            DoctorStatus::Fail,
+            "invalid NEXT_RUN must FAIL"
+        );
+        let nr = report
+            .next_run
+            .iter()
+            .find(|c| c.label == "NEXT_RUN.md valid")
+            .unwrap();
         assert_eq!(nr.outcome, CheckOutcome::Fail);
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -867,14 +1065,22 @@ mod tests {
         let gov_cfg = cfg.clone();
         let report = crate::loop_governor::decide(&gov_cfg);
         let path = crate::loop_governor::write_governor_next_run(&gov_cfg, &report, None);
-        assert!(path.is_some(), "setup: governor writer should produce NEXT_RUN.md");
+        assert!(
+            path.is_some(),
+            "setup: governor writer should produce NEXT_RUN.md"
+        );
         let doc_report = run_doctor_report(&cfg);
         let nr = doc_report
             .next_run
             .iter()
             .find(|c| c.label == "NEXT_RUN.md valid")
             .unwrap();
-        assert_eq!(nr.outcome, CheckOutcome::Pass, "valid NEXT_RUN should PASS: {:?}", nr.detail);
+        assert_eq!(
+            nr.outcome,
+            CheckOutcome::Pass,
+            "valid NEXT_RUN should PASS: {:?}",
+            nr.detail
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -883,8 +1089,16 @@ mod tests {
         let (cfg, dir) = cfg_with_temp_akar("missing_baseline");
         // No DIFF_BASELINE.json present — fresh project, expected.
         let report = run_doctor_report(&cfg);
-        let b = report.files.iter().find(|c| c.label == "DIFF_BASELINE.json").unwrap();
-        assert_eq!(b.outcome, CheckOutcome::Pass, "missing baseline on fresh project should PASS");
+        let b = report
+            .files
+            .iter()
+            .find(|c| c.label == "DIFF_BASELINE.json")
+            .unwrap();
+        assert_eq!(
+            b.outcome,
+            CheckOutcome::Pass,
+            "missing baseline on fresh project should PASS"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -893,8 +1107,16 @@ mod tests {
         let (cfg, dir) = cfg_with_temp_akar("bad_event_log");
         std::fs::write(dir.join("EVENT_LOG.jsonl"), "this is not json\n{broken\n").unwrap();
         let report = run_doctor_report(&cfg);
-        let ev = report.telemetry.iter().find(|c| c.label == "EVENT_LOG.jsonl").unwrap();
-        assert_eq!(ev.outcome, CheckOutcome::Fail, "malformed EVENT_LOG must FAIL");
+        let ev = report
+            .telemetry
+            .iter()
+            .find(|c| c.label == "EVENT_LOG.jsonl")
+            .unwrap();
+        assert_eq!(
+            ev.outcome,
+            CheckOutcome::Fail,
+            "malformed EVENT_LOG must FAIL"
+        );
         assert_eq!(report.status, DoctorStatus::Fail);
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -904,8 +1126,16 @@ mod tests {
         let (cfg, dir) = cfg_with_temp_akar("bad_hook_events");
         std::fs::write(dir.join("HOOK_EVENTS.jsonl"), "not json at all\n").unwrap();
         let report = run_doctor_report(&cfg);
-        let he = report.telemetry.iter().find(|c| c.label == "HOOK_EVENTS.jsonl").unwrap();
-        assert_eq!(he.outcome, CheckOutcome::Fail, "malformed HOOK_EVENTS must FAIL");
+        let he = report
+            .telemetry
+            .iter()
+            .find(|c| c.label == "HOOK_EVENTS.jsonl")
+            .unwrap();
+        assert_eq!(
+            he.outcome,
+            CheckOutcome::Fail,
+            "malformed HOOK_EVENTS must FAIL"
+        );
         assert_eq!(report.status, DoctorStatus::Fail);
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -916,10 +1146,20 @@ mod tests {
         std::fs::write(
             dir.join("EVENT_LOG.jsonl"),
             "{\"ts\":\"t\",\"event\":\"info\",\"summary\":\"ok\"}\n",
-        ).unwrap();
+        )
+        .unwrap();
         let report = run_doctor_report(&cfg);
-        let ev = report.telemetry.iter().find(|c| c.label == "EVENT_LOG.jsonl").unwrap();
-        assert_eq!(ev.outcome, CheckOutcome::Pass, "valid EVENT_LOG should PASS: {:?}", ev.detail);
+        let ev = report
+            .telemetry
+            .iter()
+            .find(|c| c.label == "EVENT_LOG.jsonl")
+            .unwrap();
+        assert_eq!(
+            ev.outcome,
+            CheckOutcome::Pass,
+            "valid EVENT_LOG should PASS: {:?}",
+            ev.detail
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -928,10 +1168,8 @@ mod tests {
         // v0.25: a fresh external repo with no source-tree templates must PASS
         // the hook-template check via the embedded fallback. This is the core
         // fix for the v0.24 dogfood blocker (doctor used to FAIL here).
-        let tmp = std::env::temp_dir().join(format!(
-            "akar_doctor_embedded_hooks_{}",
-            std::process::id()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("akar_doctor_embedded_hooks_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
         let cfg = crate::config::Config {
@@ -942,7 +1180,11 @@ mod tests {
         };
         std::fs::create_dir_all(&cfg.akar_dir).unwrap();
         let report = run_doctor_report(&cfg);
-        let ht = report.hooks.iter().find(|c| c.label == "hook templates").unwrap();
+        let ht = report
+            .hooks
+            .iter()
+            .find(|c| c.label == "hook templates")
+            .unwrap();
         assert_eq!(
             ht.outcome,
             CheckOutcome::Pass,
@@ -965,8 +1207,17 @@ mod tests {
         let install = crate::hooks::install_hooks(&cfg, true);
         assert!(!install.cancelled, "setup: install should succeed");
         let report = run_doctor_report(&cfg);
-        let ht = report.hooks.iter().find(|c| c.label == "hook templates").unwrap();
-        assert_eq!(ht.outcome, CheckOutcome::Pass, "installed templates must PASS: {}", ht.detail);
+        let ht = report
+            .hooks
+            .iter()
+            .find(|c| c.label == "hook templates")
+            .unwrap();
+        assert_eq!(
+            ht.outcome,
+            CheckOutcome::Pass,
+            "installed templates must PASS: {}",
+            ht.detail
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -990,30 +1241,36 @@ mod tests {
         // doctor should WARN (not FAIL). If clean, the check passes. Either
         // way it must not FAIL on tree state alone.
         let cfg = crate::config::Config::discover();
-        let (cfg, dir) = (crate::config::Config {
-            project_root: cfg.project_root,
-            akar_dir: std::env::temp_dir().join(format!(
-                "akar_doctor_dirty_{}",
-                std::process::id()
-            )),
-            global_dir: std::env::temp_dir().join("akar_doctor_dirty_global"),
-            project_name: "dirty-test".to_string(),
-        }, std::env::temp_dir().join("unused"));
+        let (cfg, dir) = (
+            crate::config::Config {
+                project_root: cfg.project_root,
+                akar_dir: std::env::temp_dir()
+                    .join(format!("akar_doctor_dirty_{}", std::process::id())),
+                global_dir: std::env::temp_dir().join("akar_doctor_dirty_global"),
+                project_name: "dirty-test".to_string(),
+            },
+            std::env::temp_dir().join("unused"),
+        );
         std::fs::create_dir_all(&cfg.akar_dir).unwrap();
         let report = run_doctor_report(&cfg);
-        let wt = report.git.iter().find(|c| c.label == "working tree").unwrap();
+        let wt = report
+            .git
+            .iter()
+            .find(|c| c.label == "working tree")
+            .unwrap();
         // Dirty → Warn, Clean → Pass; never Fail on tree state alone.
-        assert_ne!(wt.outcome, CheckOutcome::Fail, "tree state must not FAIL doctor");
+        assert_ne!(
+            wt.outcome,
+            CheckOutcome::Fail,
+            "tree state must not FAIL doctor"
+        );
         std::fs::remove_dir_all(&cfg.akar_dir).ok();
     }
 
     #[test]
     fn no_git_repo_is_fail() {
         // Point project_root at a temp dir that is not a git repo.
-        let tmp = std::env::temp_dir().join(format!(
-            "akar_doctor_nogit_{}",
-            std::process::id()
-        ));
+        let tmp = std::env::temp_dir().join(format!("akar_doctor_nogit_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
         let cfg = crate::config::Config {
@@ -1024,7 +1281,11 @@ mod tests {
         };
         std::fs::create_dir_all(&cfg.akar_dir).unwrap();
         let report = run_doctor_report(&cfg);
-        let gr = report.git.iter().find(|c| c.label == "git repository").unwrap();
+        let gr = report
+            .git
+            .iter()
+            .find(|c| c.label == "git repository")
+            .unwrap();
         assert_eq!(gr.outcome, CheckOutcome::Fail, "no git repo must FAIL");
         std::fs::remove_dir_all(&tmp).ok();
     }
@@ -1039,7 +1300,12 @@ mod tests {
         let next_run = cfg.akar_dir.join("NEXT_RUN.md");
         if next_run.exists() {
             let report = run_doctor_report(&cfg);
-            assert_ne!(report.status, DoctorStatus::Fail, "real repo doctor should not FAIL: {:?}", report.to_issues());
+            assert_ne!(
+                report.status,
+                DoctorStatus::Fail,
+                "real repo doctor should not FAIL: {:?}",
+                report.to_issues()
+            );
         }
     }
 
@@ -1062,11 +1328,8 @@ mod tests {
     /// Build a temp dir with the given files and a valid .akar/ so the doctor
     /// produces the project-kind check without noise from missing-bootstrap.
     fn cfg_with_markers(label: &str, files: &[&str]) -> crate::config::Config {
-        let dir = std::env::temp_dir().join(format!(
-            "akar_doctor_pk_{}_{}",
-            label,
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("akar_doctor_pk_{}_{}", label, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join(".akar")).unwrap();
         for f in files {
@@ -1129,7 +1392,11 @@ mod tests {
         let cfg = cfg_with_markers("node_no_cargo", &["package.json"]);
         let report = run_doctor_report(&cfg);
         let formatted = format_doctor_report(&report);
-        assert!(!formatted.contains("cargo project"), "Node doctor output must not say 'cargo project':\n{}", formatted);
+        assert!(
+            !formatted.contains("cargo project"),
+            "Node doctor output must not say 'cargo project':\n{}",
+            formatted
+        );
         std::fs::remove_dir_all(&cfg.project_root).ok();
     }
 
@@ -1138,7 +1405,11 @@ mod tests {
         let cfg = cfg_with_markers("py_no_cargo", &["requirements.txt"]);
         let report = run_doctor_report(&cfg);
         let formatted = format_doctor_report(&report);
-        assert!(!formatted.contains("cargo project"), "Python doctor output must not say 'cargo project':\n{}", formatted);
+        assert!(
+            !formatted.contains("cargo project"),
+            "Python doctor output must not say 'cargo project':\n{}",
+            formatted
+        );
         std::fs::remove_dir_all(&cfg.project_root).ok();
     }
 
@@ -1147,7 +1418,11 @@ mod tests {
         let cfg = cfg_with_markers("unk_no_cargo", &[]);
         let report = run_doctor_report(&cfg);
         let formatted = format_doctor_report(&report);
-        assert!(!formatted.contains("cargo project"), "Unknown doctor output must not say 'cargo project':\n{}", formatted);
+        assert!(
+            !formatted.contains("cargo project"),
+            "Unknown doctor output must not say 'cargo project':\n{}",
+            formatted
+        );
         std::fs::remove_dir_all(&cfg.project_root).ok();
     }
 
@@ -1157,7 +1432,11 @@ mod tests {
         let report = run_doctor_report(&cfg);
         let pk = find_git_check(&report, "project kind").unwrap();
         assert_eq!(pk.outcome, CheckOutcome::Pass);
-        assert!(!pk.detail.contains("no Cargo.toml"), "Node PASS must not say 'no Cargo.toml': {}", pk.detail);
+        assert!(
+            !pk.detail.contains("no Cargo.toml"),
+            "Node PASS must not say 'no Cargo.toml': {}",
+            pk.detail
+        );
         std::fs::remove_dir_all(&cfg.project_root).ok();
     }
 
@@ -1167,7 +1446,11 @@ mod tests {
         let report = run_doctor_report(&cfg);
         let pk = find_git_check(&report, "project kind").unwrap();
         assert_eq!(pk.outcome, CheckOutcome::Pass);
-        assert!(!pk.detail.contains("no Cargo.toml"), "Python PASS must not say 'no Cargo.toml': {}", pk.detail);
+        assert!(
+            !pk.detail.contains("no Cargo.toml"),
+            "Python PASS must not say 'no Cargo.toml': {}",
+            pk.detail
+        );
         std::fs::remove_dir_all(&cfg.project_root).ok();
     }
 
@@ -1176,7 +1459,11 @@ mod tests {
         let cfg = cfg_with_markers("unk_no_cargo_req", &[]);
         let report = run_doctor_report(&cfg);
         let pk = find_git_check(&report, "project kind").unwrap();
-        assert!(!pk.detail.contains("Cargo.toml"), "Unknown must not say Cargo.toml: {}", pk.detail);
+        assert!(
+            !pk.detail.contains("Cargo.toml"),
+            "Unknown must not say Cargo.toml: {}",
+            pk.detail
+        );
         std::fs::remove_dir_all(&cfg.project_root).ok();
     }
 
@@ -1193,5 +1480,54 @@ mod tests {
         assert!(out.contains("git:"));
         assert!(out.contains("next-run:"));
         assert!(out.contains("recommendations:"));
+        assert!(out.contains("claude.md snippet:"));
+        assert!(out.contains("path health:"));
+    }
+
+    // -- v0.53.0: CLAUDE.md snippet and PATH health checks --------------
+
+    #[test]
+    fn claude_snippet_check_produces_a_result() {
+        let cfg = make_cfg_all_missing();
+        let checks = check_claude_snippet(&cfg);
+        assert!(
+            !checks.is_empty(),
+            "should always produce at least one check"
+        );
+    }
+
+    #[test]
+    fn path_health_check_produces_non_empty() {
+        let checks = check_path_health_section();
+        assert!(
+            checks.len() >= 2,
+            "should have running akar + path akar checks"
+        );
+        assert!(checks.iter().any(|c| c.label == "running akar"));
+        assert!(checks.iter().any(|c| c.label == "akar on PATH"));
+    }
+
+    #[test]
+    fn doctor_report_includes_new_sections() {
+        let cfg = make_cfg_all_missing();
+        let report = run_doctor_report(&cfg);
+        assert!(!report.claude_snippet.is_empty());
+        assert!(!report.path_health.is_empty());
+    }
+
+    #[test]
+    fn run_checks_includes_snippet_when_absent() {
+        let cfg = make_cfg_all_missing();
+        let issues = run_checks(&cfg);
+        // When CLAUDE.md is absent in a non-existent project, there should
+        // be a warning for the missing snippet.
+        let has_snippet_issue = issues
+            .iter()
+            .any(|i| i.message.contains("CLAUDE.md snippet"));
+        assert!(
+            has_snippet_issue,
+            "should include snippet issue when CLAUDE.md is absent: {:?}",
+            issues.iter().map(|i| &i.message).collect::<Vec<_>>()
+        );
     }
 }

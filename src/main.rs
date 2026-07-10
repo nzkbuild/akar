@@ -1,29 +1,31 @@
 mod backup;
 mod bootstrap;
-mod diff_budget;
-mod foundation;
-mod hooks;
-mod init;
+mod claude_snippet;
 mod config;
 mod context_pack;
 mod contract;
 mod design;
+mod diff_budget;
 mod doctor;
 mod eval;
 mod event_log;
+mod foundation;
+mod hooks;
+mod init;
 mod learn;
 mod loop_governor;
 mod mission;
 mod model_profile;
+mod path_health;
 mod postmortem;
 mod preflight;
 mod project_detection;
 mod project_verification_contract;
 mod request_intelligence;
-mod verification_discovery;
 mod safe_fix;
 mod safety;
 mod skill_registry;
+mod verification_discovery;
 mod verify;
 mod workflow;
 
@@ -73,7 +75,8 @@ fn main() {
         "init" => {
             let skip = args.iter().any(|a| a == "--skip");
             let claude = args.iter().any(|a| a == "--claude");
-            cmd_init(skip, claude);
+            let yes = has_yes_flag(&args);
+            cmd_init(skip, claude, yes);
         }
         "bootstrap" => cmd_bootstrap(),
         "verify" => cmd_verify(),
@@ -115,7 +118,8 @@ fn main() {
             cmd_learn(list_mode, resolve_mode);
         }
         "run" => {
-            let prompt_args: Vec<&str> = args[2..].iter()
+            let prompt_args: Vec<&str> = args[2..]
+                .iter()
                 .take_while(|s| !s.starts_with("--"))
                 .map(|s| s.as_str())
                 .collect();
@@ -131,7 +135,8 @@ fn main() {
         }
         "preflight" => {
             let snapshot = args.iter().any(|a| a == "--snapshot");
-            let prompt_args: Vec<&str> = args[2..].iter()
+            let prompt_args: Vec<&str> = args[2..]
+                .iter()
                 .filter(|s| !s.starts_with("--"))
                 .map(|s| s.as_str())
                 .collect();
@@ -139,7 +144,9 @@ fn main() {
             let limit = parse_flag_u64(&args, "--limit");
             if prompt_args.is_empty() {
                 println!("akar preflight \"<task prompt>\"");
-                println!("  akar preflight --snapshot \"<task>\"  — write diff baseline before session");
+                println!(
+                    "  akar preflight --snapshot \"<task>\"  — write diff baseline before session"
+                );
                 println!("  example: akar preflight \"fix the login button\"");
             } else {
                 cmd_preflight(&prompt_args.join(" "), used, limit, snapshot);
@@ -198,7 +205,11 @@ fn print_usage() {
     println!();
     println!("COMMANDS:");
     println!("  init            First-run onboarding: bootstrap + doctor + next-steps guide");
-    println!("  init --claude   Include Claude Code integration instructions");
+    println!("  init --skip     Skip interactive check, force bootstrap + doctor");
+    println!("  init --claude   Apply the AKAR session guidance snippet to CLAUDE.md");
+    println!(
+        "  init --yes      Skip confirmation prompts (use with --claude for non-interactive setup)"
+    );
     println!("  prepare <task>  Consolidated pre-task: snapshot + request + check + governor");
     println!("  finish          Consolidated post-task: postmortem + learn + governor + status");
     println!("  status      Show runtime health and current session state");
@@ -206,7 +217,9 @@ fn print_usage() {
     println!("  governor --one-line  Print DECISION<TAB>SUGGESTED_PROMPT on one line");
     println!("  governor --json      Print the loop governor decision as JSON");
     println!("  governor --no-exit-code  Print output but always exit 0");
-    println!("  governor --telemetry     Also record the decision in .akar/EVENT_LOG.jsonl (opt-in)");
+    println!(
+        "  governor --telemetry     Also record the decision in .akar/EVENT_LOG.jsonl (opt-in)"
+    );
     println!("  doctor      Read-only health check of AKAR and project config");
     println!("  doctor --fix  Apply safe fixes for detected issues (backs up before overwriting)");
     println!("  bootstrap   Initialize missing AKAR memory files for a project");
@@ -224,15 +237,17 @@ fn print_usage() {
     println!("  preflight <task>  Show mission strategy before executing a task");
     println!("  request           Show request pressure mode and strategy advisory");
     println!("  request --used N --limit M  Supply explicit request counts for pressure mode");
-    println!("  request --check   Validate .akar/NEXT_RUN.md (read-only; exit 0 on PASS, non-zero on FAIL)");
+    println!(
+        "  request --check   Validate .akar/NEXT_RUN.md (read-only; exit 0 on PASS, non-zero on FAIL)"
+    );
     println!();
     println!("FLAGS:");
     println!("  --version   Print version");
     println!("  --help      Print this help");
 }
 
-fn cmd_init(skip: bool, claude_integration: bool) {
-    let result = init::run_init(skip, claude_integration);
+fn cmd_init(skip: bool, claude_integration: bool, yes: bool) {
+    let result = init::run_init(skip, claude_integration, yes);
     print!("{}", init::format_init_report(&result));
 }
 
@@ -247,7 +262,11 @@ fn cmd_status() {
     };
 
     // Bootstrap state
-    let bootstrap_state = if cfg.akar_dir.exists() { "OK" } else { "not bootstrapped" };
+    let bootstrap_state = if cfg.akar_dir.exists() {
+        "OK"
+    } else {
+        "not bootstrapped"
+    };
 
     // Telemetry count
     let log_path = cfg.akar_dir.join("EVENT_LOG.jsonl");
@@ -273,7 +292,11 @@ fn cmd_status() {
     };
 
     // Request mode
-    let signals = request_intelligence::RequestSignals { used: None, limit: None, prompt: None };
+    let signals = request_intelligence::RequestSignals {
+        used: None,
+        limit: None,
+        prompt: None,
+    };
     let advisory = request_intelligence::build_advisory(&cfg, &signals);
     let request_mode = advisory.mode.as_str();
 
@@ -305,6 +328,38 @@ fn cmd_status() {
     // local evidence + foundation playbooks. Advisory only — never executes.
     let governor = loop_governor::decide(&cfg);
     print!("{}", loop_governor::format_loop_governor(&governor));
+
+    // CLAUDE.md snippet state.
+    let snippet_state = claude_snippet::detect_snippet_state(&cfg.project_root);
+    let snippet_line = match snippet_state {
+        claude_snippet::SnippetState::Absent => "no AKAR snippet — run 'akar init --claude'",
+        claude_snippet::SnippetState::PresentNoBlock => "present but no AKAR snippet",
+        claude_snippet::SnippetState::PresentWithBlock => "AKAR snippet installed",
+        claude_snippet::SnippetState::Outdated => "AKAR snippet OUTDATED",
+        claude_snippet::SnippetState::Duplicate => "AKAR snippet DUPLICATE",
+    };
+    println!("  claude.md:  {}", snippet_line);
+
+    // PATH akar health.
+    let ph = path_health::check_path_health();
+    let path_line = match ph.status {
+        path_health::PathHealthStatus::Healthy => {
+            let loc = ph
+                .path_akar
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "same as running".to_string());
+            format!("healthy — {}", loc)
+        }
+        path_health::PathHealthStatus::Missing => "MISSING".to_string(),
+        path_health::PathHealthStatus::Mismatch => format!(
+            "MISMATCH — v{} (running) vs v{} (PATH)",
+            ph.running_version,
+            ph.path_version.as_deref().unwrap_or("unknown")
+        ),
+        path_health::PathHealthStatus::UnknownVersion => "found but version unknown".to_string(),
+    };
+    println!("  path akar:  {}", path_line);
 
     // Surface doctor findings (failures first, then warnings). Only FAILs make
     // status DEGRADED; warnings are advisory and listed for visibility.
@@ -366,7 +421,8 @@ fn cmd_governor(one_line: bool, json_mode: bool, no_exit_code: bool, telemetry: 
     if telemetry {
         // Opt-in telemetry: record this governor call in the local event log.
         // The suggested prompt is intentionally NOT logged.
-        let _ = loop_governor::write_governor_telemetry(&cfg, &report, mode, no_exit_code, exit_code);
+        let _ =
+            loop_governor::write_governor_telemetry(&cfg, &report, mode, no_exit_code, exit_code);
     }
 
     exit_code
@@ -424,7 +480,10 @@ fn cmd_doctor(fix_mode: bool) {
                 }
             },
             None => {
-                println!("  skip: no auto-fix for: {} (requires human action)", issue.message);
+                println!(
+                    "  skip: no auto-fix for: {} (requires human action)",
+                    issue.message
+                );
                 skipped += 1;
             }
         }
@@ -448,8 +507,7 @@ fn cmd_bootstrap() {
 }
 
 fn cmd_verify() {
-    let project_root = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let project_root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
     let recipe = verify::detect_recipe(&project_root);
     let results = verify::run_recipe(&recipe, &project_root);
@@ -478,7 +536,11 @@ fn cmd_safety(command: Option<&str>) {
         Some(cmd) => {
             let assessment = safety::classify_command(cmd);
             let risk = format!("{:?}", assessment.risk);
-            let status = if assessment.blocked { "BLOCKED" } else { "allowed" };
+            let status = if assessment.blocked {
+                "BLOCKED"
+            } else {
+                "allowed"
+            };
             println!("safety assessment:");
             println!("  command: {}", assessment.command);
             println!("  risk:    {}", risk);
@@ -551,7 +613,8 @@ fn cmd_hooks(check: bool, install: bool) {
 
 fn cmd_skills() {
     let cfg = config::Config::discover();
-    let claude_dir = cfg.global_dir
+    let claude_dir = cfg
+        .global_dir
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| config::home_dir().join(".claude"));
@@ -603,12 +666,13 @@ fn cmd_postmortem(diff_mode: bool, baseline_mode: bool, task_name: Option<String
         println!("  baseline timestamp: {}", baseline.timestamp);
         println!("  baseline task:      {}", baseline.task_type);
         println!("  baseline head:      {}", baseline.head_commit);
-        println!("  baseline budget:    {} files, {} LOC", baseline.budget_files_max, baseline.budget_loc_max);
-
-        let measurement = diff_budget::measure_diff_from_commit(
-            &cfg.project_root,
-            &baseline.head_commit,
+        println!(
+            "  baseline budget:    {} files, {} LOC",
+            baseline.budget_files_max, baseline.budget_loc_max
         );
+
+        let measurement =
+            diff_budget::measure_diff_from_commit(&cfg.project_root, &baseline.head_commit);
         let verdict = diff_budget::compare_budget(
             &measurement,
             baseline.budget_files_max,
@@ -656,7 +720,9 @@ fn cmd_postmortem(diff_mode: bool, baseline_mode: bool, task_name: Option<String
     if is_default {
         println!("postmortem --diff: using Bugfix budget by default");
         println!("  hint: use --task <type> for a different budget");
-        println!("  valid: bugfix, feature, refactor, security, migration, dependency, frontend, docs, test, config");
+        println!(
+            "  valid: bugfix, feature, refactor, security, migration, dependency, frontend, docs, test, config"
+        );
     }
 
     let measurement = diff_budget::measure_diff(&cfg.project_root);
@@ -683,7 +749,14 @@ fn cmd_postmortem(diff_mode: bool, baseline_mode: bool, task_name: Option<String
 
     // Append learning patch when budget exceeded.
     if matches!(verdict, diff_budget::BudgetVerdict::Exceeded { .. }) && cfg.akar_dir.exists() {
-        write_diff_learning_patch(&cfg, &measurement, &verdict, files_max, loc_max, canonical_name);
+        write_diff_learning_patch(
+            &cfg,
+            &measurement,
+            &verdict,
+            files_max,
+            loc_max,
+            canonical_name,
+        );
     }
 }
 
@@ -726,7 +799,11 @@ fn write_diff_learning_patch(
         reason = reason,
     );
     let needs_header = !patch_path.exists();
-    if let Ok(mut f) = OpenOptions::new().append(true).create(true).open(&patch_path) {
+    if let Ok(mut f) = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&patch_path)
+    {
         if needs_header {
             let _ = write!(f, "# AKAR Learning Patches\n<!-- Append-only. -->\n");
         }
@@ -758,10 +835,16 @@ fn cmd_learn(list_mode: bool, resolve_mode: bool) {
                 println!("  all entries are already resolved.");
             }
             Some(n) => {
-                println!("learn --resolve: {} active entr{} resolved", n, if n == 1 { "y" } else { "ies" });
+                println!(
+                    "learn --resolve: {} active entr{} resolved",
+                    n,
+                    if n == 1 { "y" } else { "ies" }
+                );
                 println!("  file: {}", patch_path.display());
                 println!("  resolved_at: {}", now);
-                println!("  resolved entries stay recorded but no longer affect the loop governor.");
+                println!(
+                    "  resolved entries stay recorded but no longer affect the loop governor."
+                );
             }
         }
         return;
@@ -838,9 +921,17 @@ fn cmd_preflight(prompt: &str, used: Option<u64>, limit: Option<u64>, snapshot: 
                 println!("snapshot: baseline written");
                 println!("  head:   {}", head);
                 println!("  task:   {}", baseline.task_type);
-                println!("  budget: {} files, {} LOC", baseline.budget_files_max, baseline.budget_loc_max);
-                println!("  file:   {}", cfg.akar_dir.join("DIFF_BASELINE.json").display());
-                println!("  next:   run your Claude Code session, then 'akar postmortem --diff --baseline'");
+                println!(
+                    "  budget: {} files, {} LOC",
+                    baseline.budget_files_max, baseline.budget_loc_max
+                );
+                println!(
+                    "  file:   {}",
+                    cfg.akar_dir.join("DIFF_BASELINE.json").display()
+                );
+                println!(
+                    "  next:   run your Claude Code session, then 'akar postmortem --diff --baseline'"
+                );
             }
             Err(e) => {
                 eprintln!("preflight --snapshot: {}", e);
@@ -850,9 +941,18 @@ fn cmd_preflight(prompt: &str, used: Option<u64>, limit: Option<u64>, snapshot: 
     }
 }
 
-fn cmd_request(used: Option<u64>, limit: Option<u64>, prompt: Option<String>, task: Option<String>) {
+fn cmd_request(
+    used: Option<u64>,
+    limit: Option<u64>,
+    prompt: Option<String>,
+    task: Option<String>,
+) {
     let cfg = config::Config::discover();
-    let signals = request_intelligence::RequestSignals { used, limit, prompt };
+    let signals = request_intelligence::RequestSignals {
+        used,
+        limit,
+        prompt,
+    };
     let advisory = request_intelligence::build_advisory(&cfg, &signals);
     print!("{}", request_intelligence::format_advisory(&advisory));
 
@@ -898,11 +998,7 @@ fn cmd_request_check() -> i32 {
     };
     let result = loop_governor::validate_next_run(&content);
     print!("{}", loop_governor::format_next_run_check(&result));
-    if result.pass {
-        0
-    } else {
-        1
-    }
+    if result.pass { 0 } else { 1 }
 }
 
 fn parse_flag_u64(args: &[String], flag: &str) -> Option<u64> {
@@ -912,9 +1008,11 @@ fn parse_flag_u64(args: &[String], flag: &str) -> Option<u64> {
 }
 
 fn parse_flag_str(args: &[String], flag: &str) -> Option<String> {
-    args.windows(2)
-        .find(|w| w[0] == flag)
-        .map(|w| w[1].clone())
+    args.windows(2).find(|w| w[0] == flag).map(|w| w[1].clone())
+}
+
+fn has_yes_flag(args: &[String]) -> bool {
+    args.iter().any(|a| a == "--yes")
 }
 
 /// v0.26 dogfood advisory (read-only): if the working tree is dirty ONLY
@@ -926,7 +1024,9 @@ fn parse_flag_str(args: &[String], flag: &str) -> Option<String> {
 /// AKAR will NOT auto-ignore, auto-delete, or auto-commit `Cargo.lock`. The
 /// snapshot still refuses a dirty tree regardless.
 fn cargo_lock_dirty_advisory(project_root: &std::path::Path) -> Option<String> {
-    if crate::project_detection::detect_project_kind(project_root) != crate::project_detection::ProjectKind::Rust {
+    if crate::project_detection::detect_project_kind(project_root)
+        != crate::project_detection::ProjectKind::Rust
+    {
         return None;
     }
     let out = std::process::Command::new("git")
@@ -941,7 +1041,12 @@ fn cargo_lock_dirty_advisory(project_root: &std::path::Path) -> Option<String> {
     let dirty_files: Vec<&str> = porcelain
         .lines()
         .filter(|l| !l.trim().is_empty())
-        .map(|l| l.trim_start_matches(" ").split_whitespace().last().unwrap_or(""))
+        .map(|l| {
+            l.trim_start_matches(" ")
+                .split_whitespace()
+                .last()
+                .unwrap_or("")
+        })
         .filter(|f| !f.is_empty())
         .collect();
     if dirty_files.is_empty() {
@@ -984,7 +1089,12 @@ fn akar_state_dirty_advisory(project_root: &std::path::Path) -> Option<String> {
     let dirty_files: Vec<&str> = porcelain
         .lines()
         .filter(|l| !l.trim().is_empty())
-        .map(|l| l.trim_start_matches(" ").split_whitespace().last().unwrap_or(""))
+        .map(|l| {
+            l.trim_start_matches(" ")
+                .split_whitespace()
+                .last()
+                .unwrap_or("")
+        })
         .filter(|f| !f.is_empty())
         .collect();
     if dirty_files.is_empty() {
@@ -1089,7 +1199,11 @@ fn cmd_prepare(task: Option<String>, used: Option<u64>, limit: Option<u64>) {
     }
 
     // 3. Request — generate NEXT_RUN.md
-    let signals = request_intelligence::RequestSignals { used, limit, prompt: None };
+    let signals = request_intelligence::RequestSignals {
+        used,
+        limit,
+        prompt: None,
+    };
     let advisory = request_intelligence::build_advisory(&cfg, &signals);
     let governor = loop_governor::decide(&cfg);
 
@@ -1105,7 +1219,10 @@ fn cmd_prepare(task: Option<String>, used: Option<u64>, limit: Option<u64>) {
     let nr_content = match std::fs::read_to_string(&nr_path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("akar prepare: cannot read NEXT_RUN.md for validation: {}", e);
+            eprintln!(
+                "akar prepare: cannot read NEXT_RUN.md for validation: {}",
+                e
+            );
             process::exit(1);
         }
     };
@@ -1120,8 +1237,10 @@ fn cmd_prepare(task: Option<String>, used: Option<u64>, limit: Option<u64>) {
     println!("AKAR prepare");
     println!("  task:         {}", task);
     println!("  project:      {} ({})", cfg.project_name, kind_label);
-    println!("  baseline:     snapshot at {} ({} files, {} LOC)",
-        head, baseline.budget_files_max, baseline.budget_loc_max);
+    println!(
+        "  baseline:     snapshot at {} ({} files, {} LOC)",
+        head, baseline.budget_files_max, baseline.budget_loc_max
+    );
     println!("  task type:    {}", baseline.task_type);
     println!("  request mode: {}", advisory.mode.as_str());
     println!("  check:        PASS");
@@ -1174,16 +1293,16 @@ fn cmd_finish() {
         Ok(b) => b,
         Err(e) => {
             eprintln!("akar finish: {}", e);
-            eprintln!("  No diff baseline found. Run 'akar prepare \"<task>\"' before starting a measured task.");
+            eprintln!(
+                "  No diff baseline found. Run 'akar prepare \"<task>\"' before starting a measured task."
+            );
             process::exit(1);
         }
     };
 
     // 2. Postmortem — measure diff
-    let measurement = diff_budget::measure_diff_from_commit(
-        &cfg.project_root,
-        &baseline.head_commit,
-    );
+    let measurement =
+        diff_budget::measure_diff_from_commit(&cfg.project_root, &baseline.head_commit);
     let verdict = diff_budget::compare_budget(
         &measurement,
         baseline.budget_files_max,
@@ -1210,13 +1329,21 @@ fn cmd_finish() {
 
     // 6. Output
     println!("AKAR finish");
-    println!("  baseline:     {} at {}", baseline.task_type, baseline.head_commit);
-    println!("  budget:       {} files, {} LOC", baseline.budget_files_max, baseline.budget_loc_max);
-    println!("  actual:       {} files, {} added, {} deleted ({} total changed LOC)",
+    println!(
+        "  baseline:     {} at {}",
+        baseline.task_type, baseline.head_commit
+    );
+    println!(
+        "  budget:       {} files, {} LOC",
+        baseline.budget_files_max, baseline.budget_loc_max
+    );
+    println!(
+        "  actual:       {} files, {} added, {} deleted ({} total changed LOC)",
         measurement.file_count,
         measurement.added_lines,
         measurement.deleted_lines,
-        measurement.total_changed_lines);
+        measurement.total_changed_lines
+    );
     let verdict_line = match &verdict {
         diff_budget::BudgetVerdict::Pass => "PASS\n".to_string(),
         diff_budget::BudgetVerdict::Exceeded { reason } => format!("EXCEEDED: {}\n", reason),
@@ -1226,10 +1353,15 @@ fn cmd_finish() {
 
     // Learn summary
     if patch_summary.total > 0 {
-        println!("  patches:      {} total, {} active, {} resolved",
-            patch_summary.total, patch_summary.active, patch_summary.resolved);
+        println!(
+            "  patches:      {} total, {} active, {} resolved",
+            patch_summary.total, patch_summary.active, patch_summary.resolved
+        );
         if patch_summary.active_split_rule > 0 {
-            println!("                {} active split-rule(s) — governor affected", patch_summary.active_split_rule);
+            println!(
+                "                {} active split-rule(s) — governor affected",
+                patch_summary.active_split_rule
+            );
         }
     } else {
         println!("  patches:      none");
@@ -1242,8 +1374,14 @@ fn cmd_finish() {
     if issues.is_empty() {
         println!("  health:       OK");
     } else {
-        let fails: Vec<_> = issues.iter().filter(|i| i.severity == doctor::Severity::Error).collect();
-        let warns: Vec<_> = issues.iter().filter(|i| i.severity == doctor::Severity::Warning).collect();
+        let fails: Vec<_> = issues
+            .iter()
+            .filter(|i| i.severity == doctor::Severity::Error)
+            .collect();
+        let warns: Vec<_> = issues
+            .iter()
+            .filter(|i| i.severity == doctor::Severity::Warning)
+            .collect();
         if !fails.is_empty() {
             println!("  health:       {} FAIL(s)", fails.len());
             for f in &fails {
@@ -1331,7 +1469,9 @@ mod tests {
         if assessment.blocked {
             let guidance = foundation::blocked_shell_playbook(cmd);
             assert!(
-                guidance.contains("safe alternative") || guidance.contains("inspect") || guidance.contains("local"),
+                guidance.contains("safe alternative")
+                    || guidance.contains("inspect")
+                    || guidance.contains("local"),
                 "blocked safety output must include safe alternative guidance"
             );
         }
@@ -1360,7 +1500,10 @@ mod tests {
     #[test]
     fn status_blocked_git_guidance_does_not_mention_reset() {
         let guidance = foundation::git_dirty_playbook();
-        assert!(!guidance.contains("git reset"), "must not suggest git reset");
+        assert!(
+            !guidance.contains("git reset"),
+            "must not suggest git reset"
+        );
     }
 
     // -- foundation integration: postmortem EXCEEDED guidance ----------------
@@ -1396,19 +1539,36 @@ mod tests {
     /// Create a fresh temp git repo with an initial commit. Returns its path.
     fn temp_git_repo(label: &str) -> std::path::PathBuf {
         use std::process::Command;
-        let dir = std::env::temp_dir().join(format!(
-            "akar_cargolock_{}_{}",
-            label,
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("akar_cargolock_{}_{}", label, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        Command::new("git").args(["init", "-q"]).current_dir(&dir).status().unwrap();
-        Command::new("git").args(["config", "user.email", "t@t"]).current_dir(&dir).status().unwrap();
-        Command::new("git").args(["config", "user.name", "t"]).current_dir(&dir).status().unwrap();
+        Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&dir)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "t@t"])
+            .current_dir(&dir)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "t"])
+            .current_dir(&dir)
+            .status()
+            .unwrap();
         std::fs::write(dir.join("README.md"), "init\n").unwrap();
-        Command::new("git").args(["add", "-A"]).current_dir(&dir).status().unwrap();
-        Command::new("git").args(["commit", "-q", "-m", "init"]).current_dir(&dir).status().unwrap();
+        Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(&dir)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-q", "-m", "init"])
+            .current_dir(&dir)
+            .status()
+            .unwrap();
         dir
     }
 
@@ -1417,15 +1577,38 @@ mod tests {
         let dir = temp_git_repo("only_lock");
         // Cargo.toml committed as part of the baseline; Cargo.lock newly generated (untracked).
         use std::process::Command;
-        std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"x\"\nversion = \"0.1.0\"\n").unwrap();
-        Command::new("git").args(["add", "-A"]).current_dir(&dir).status().unwrap();
-        Command::new("git").args(["commit", "-q", "-m", "add cargo toml"]).current_dir(&dir).status().unwrap();
+        std::fs::write(
+            dir.join("Cargo.toml"),
+            "[package]\nname = \"x\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(&dir)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-q", "-m", "add cargo toml"])
+            .current_dir(&dir)
+            .status()
+            .unwrap();
         std::fs::write(dir.join("Cargo.lock"), "# lock\n").unwrap();
         let advisory = cargo_lock_dirty_advisory(&dir);
-        assert!(advisory.is_some(), "advisory should fire when only Cargo.lock is dirty");
+        assert!(
+            advisory.is_some(),
+            "advisory should fire when only Cargo.lock is dirty"
+        );
         let msg = advisory.unwrap();
-        assert!(msg.contains("Cargo.lock"), "advisory must mention Cargo.lock: {}", msg);
-        assert!(msg.contains("AKAR will not decide"), "advisory must say AKAR will not decide: {}", msg);
+        assert!(
+            msg.contains("Cargo.lock"),
+            "advisory must mention Cargo.lock: {}",
+            msg
+        );
+        assert!(
+            msg.contains("AKAR will not decide"),
+            "advisory must say AKAR will not decide: {}",
+            msg
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1438,7 +1621,10 @@ mod tests {
         std::fs::create_dir_all(dir.join("src")).unwrap();
         std::fs::write(dir.join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
         let advisory = cargo_lock_dirty_advisory(&dir);
-        assert!(advisory.is_none(), "advisory must NOT fire when other files are also dirty");
+        assert!(
+            advisory.is_none(),
+            "advisory must NOT fire when other files are also dirty"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1448,7 +1634,10 @@ mod tests {
         // Cargo.lock dirty but no Cargo.toml — not a Rust project.
         std::fs::write(dir.join("Cargo.lock"), "# lock\n").unwrap();
         let advisory = cargo_lock_dirty_advisory(&dir);
-        assert!(advisory.is_none(), "advisory must NOT fire without Cargo.toml");
+        assert!(
+            advisory.is_none(),
+            "advisory must NOT fire without Cargo.toml"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1459,8 +1648,16 @@ mod tests {
         std::fs::write(dir.join("Cargo.lock"), "# lock\n").unwrap();
         // Commit both so the tree is clean.
         use std::process::Command;
-        Command::new("git").args(["add", "-A"]).current_dir(&dir).status().unwrap();
-        Command::new("git").args(["commit", "-q", "-m", "add lock"]).current_dir(&dir).status().unwrap();
+        Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(&dir)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-q", "-m", "add lock"])
+            .current_dir(&dir)
+            .status()
+            .unwrap();
         let advisory = cargo_lock_dirty_advisory(&dir);
         assert!(advisory.is_none(), "advisory must NOT fire on a clean tree");
         std::fs::remove_dir_all(&dir).ok();
@@ -1479,7 +1676,11 @@ mod tests {
             "advisory should fire when only .akar/NEXT_RUN.md is dirty"
         );
         let msg = advisory.unwrap();
-        assert!(msg.contains(".akar/"), "advisory must mention .akar/: {}", msg);
+        assert!(
+            msg.contains(".akar/"),
+            "advisory must mention .akar/: {}",
+            msg
+        );
         assert!(
             msg.contains("AKAR will not decide"),
             "advisory must say AKAR will not decide: {}",
@@ -1560,8 +1761,7 @@ mod tests {
         std::fs::write(dir.join(".akar").join("NEXT_RUN.md"), "# AKAR Next Run\n").unwrap();
         let advisory = akar_state_dirty_advisory(&dir).expect("advisory should fire");
         assert!(
-            !advisory.contains("git reset")
-                || advisory.contains("Do not use destructive cleanup"),
+            !advisory.contains("git reset") || advisory.contains("Do not use destructive cleanup"),
             "advisory must not casually recommend git reset: {}",
             advisory
         );
@@ -1579,9 +1779,21 @@ mod tests {
     fn cargolock_and_akar_state_advisories_do_not_both_fire_when_both_dirty() {
         let dir = temp_git_repo("both_cargolock_and_akar_dirty");
         use std::process::Command;
-        std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"x\"\nversion = \"0.1.0\"\n").unwrap();
-        Command::new("git").args(["add", "-A"]).current_dir(&dir).status().unwrap();
-        Command::new("git").args(["commit", "-q", "-m", "add cargo toml"]).current_dir(&dir).status().unwrap();
+        std::fs::write(
+            dir.join("Cargo.toml"),
+            "[package]\nname = \"x\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(&dir)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-q", "-m", "add cargo toml"])
+            .current_dir(&dir)
+            .status()
+            .unwrap();
         std::fs::write(dir.join("Cargo.lock"), "# lock\n").unwrap();
         std::fs::create_dir_all(dir.join(".akar")).unwrap();
         std::fs::write(dir.join(".akar").join("NEXT_RUN.md"), "# AKAR Next Run\n").unwrap();
@@ -1620,7 +1832,7 @@ mod tests {
         // Capture help output by reading code — verify the format strings exist.
         // We verify print_usage references both commands by inspecting usage text.
         let usage_contains_prepare = true; // statically present in print_usage()
-        let usage_contains_finish = true;  // statically present in print_usage()
+        let usage_contains_finish = true; // statically present in print_usage()
         assert!(usage_contains_prepare, "help must include prepare");
         assert!(usage_contains_finish, "help must include finish");
     }
@@ -1680,7 +1892,11 @@ mod tests {
         assert!(path.is_some(), "must write NEXT_RUN.md");
         let content = std::fs::read_to_string(&path.unwrap()).expect("read NEXT_RUN");
         let result = loop_governor::validate_next_run(&content);
-        assert!(result.pass, "generated NEXT_RUN.md must pass validation: {:?}", result.reasons);
+        assert!(
+            result.pass,
+            "generated NEXT_RUN.md must pass validation: {:?}",
+            result.reasons
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1714,7 +1930,10 @@ mod tests {
         };
         let governor = loop_governor::decide(&cfg);
         let decision = governor.decision.as_str();
-        assert!(!decision.is_empty(), "governor decision should be non-empty");
+        assert!(
+            !decision.is_empty(),
+            "governor decision should be non-empty"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1754,8 +1973,11 @@ mod tests {
         std::fs::write(dir.join("README.md"), "updated readme\n").unwrap();
         let measurement = diff_budget::measure_diff_from_commit(&dir, &head);
         let verdict = diff_budget::compare_budget(&measurement, 3, 60);
-        assert!(matches!(verdict, diff_budget::BudgetVerdict::Pass),
-            "small change should pass budget: {:?}", verdict);
+        assert!(
+            matches!(verdict, diff_budget::BudgetVerdict::Pass),
+            "small change should pass budget: {:?}",
+            verdict
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1776,7 +1998,10 @@ mod tests {
         let path = dir.join(".akar").join("DIFF_BASELINE.json");
         assert!(path.exists(), "DIFF_BASELINE.json must exist after write");
         let content = std::fs::read_to_string(&path).expect("read");
-        assert!(content.contains("test task"), "JSON must contain task prompt");
+        assert!(
+            content.contains("test task"),
+            "JSON must contain task prompt"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1848,8 +2073,11 @@ mod tests {
         std::fs::write(dir.join("README.md"), &content).unwrap();
         let measurement = diff_budget::measure_diff_from_commit(&dir, &head);
         let verdict = diff_budget::compare_budget(&measurement, 3, 10); // very tight budget
-        assert!(matches!(verdict, diff_budget::BudgetVerdict::Exceeded { .. }),
-            "large changes should exceed tight budget, got: {:?}", verdict);
+        assert!(
+            matches!(verdict, diff_budget::BudgetVerdict::Exceeded { .. }),
+            "large changes should exceed tight budget, got: {:?}",
+            verdict
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1866,8 +2094,10 @@ mod tests {
         };
         let report = doctor::run_doctor_report(&cfg);
         let issues = report.to_issues();
-        assert!(!issues.is_empty() || issues.is_empty(),
-            "doctor issues vec should be constructable (empty or not)");
+        assert!(
+            !issues.is_empty() || issues.is_empty(),
+            "doctor issues vec should be constructable (empty or not)"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1888,7 +2118,8 @@ mod tests {
         let dir = temp_git_repo("finish_with_patches");
         std::fs::create_dir_all(dir.join(".akar")).unwrap();
         let patch_path = dir.join(".akar").join("LEARNING_PATCHES.md");
-        std::fs::write(&patch_path,
+        std::fs::write(
+            &patch_path,
             "# AKAR Learning Patches\n\
              ## LP-1\n\
              - status: active\n\
@@ -1899,13 +2130,17 @@ mod tests {
              ## LP-3\n\
              - status: active\n\
              - rule: Next prompt must reduce scope or split the task.\n\
-             \n"
-        ).unwrap();
+             \n",
+        )
+        .unwrap();
         let summary = learn::summarize_patches(&patch_path);
         assert_eq!(summary.total, 3);
         assert_eq!(summary.active, 2);
         assert_eq!(summary.resolved, 1);
-        assert!(summary.active_split_rule >= 1, "should count split-rule patches as active_split_rule");
+        assert!(
+            summary.active_split_rule >= 1,
+            "should count split-rule patches as active_split_rule"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1914,16 +2149,20 @@ mod tests {
         let dir = temp_git_repo("finish_no_auto_resolve");
         std::fs::create_dir_all(dir.join(".akar")).unwrap();
         let patch_path = dir.join(".akar").join("LEARNING_PATCHES.md");
-        std::fs::write(&patch_path,
+        std::fs::write(
+            &patch_path,
             "# AKAR Learning Patches\n\
              ## LP-1\n\
-             - status: active\n"
-        ).unwrap();
+             - status: active\n",
+        )
+        .unwrap();
         let content_before = std::fs::read_to_string(&patch_path).expect("read");
         // finish only summarizes patches; it never resolves them.
         // The content should be identical after summarize.
-        assert!(content_before.contains("status: active"),
-            "patches should remain active (not auto-resolved)");
+        assert!(
+            content_before.contains("status: active"),
+            "patches should remain active (not auto-resolved)"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1952,7 +2191,11 @@ mod tests {
         std::fs::write(dir.join("README.md"), "line1\nline2\nline3\n").unwrap();
         use std::process::Command;
         // Stage the change so git diff sees it (measure_diff_from_commit uses git diff)
-        Command::new("git").args(["add", "README.md"]).current_dir(&dir).status().unwrap();
+        Command::new("git")
+            .args(["add", "README.md"])
+            .current_dir(&dir)
+            .status()
+            .unwrap();
         let m = diff_budget::measure_diff_from_commit(&dir, &head);
         assert!(m.total_changed_lines > 0, "must have changed lines");
         assert!(m.added_lines > 0, "must have added lines");
@@ -1973,8 +2216,11 @@ mod tests {
         let m = diff_budget::measure_diff_from_commit(&dir, &head);
         // compare_budget still works — it just compares against args
         let v = diff_budget::compare_budget(&m, 100, 500);
-        assert!(matches!(v, diff_budget::BudgetVerdict::Pass),
-            "very permissive budget should pass: {:?}", v);
+        assert!(
+            matches!(v, diff_budget::BudgetVerdict::Pass),
+            "very permissive budget should pass: {:?}",
+            v
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1983,7 +2229,9 @@ mod tests {
     #[test]
     fn parse_flag_u64_parses_used_and_limit() {
         let args: Vec<String> = ["akar", "request", "--used", "42", "--limit", "100"]
-            .iter().map(|s| s.to_string()).collect();
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         assert_eq!(parse_flag_u64(&args, "--used"), Some(42));
         assert_eq!(parse_flag_u64(&args, "--limit"), Some(100));
         assert_eq!(parse_flag_u64(&args, "--nonexistent"), None);
@@ -1992,8 +2240,30 @@ mod tests {
     #[test]
     fn parse_flag_str_parses_task_flag() {
         let args: Vec<String> = ["akar", "request", "--task", "fix bug"]
-            .iter().map(|s| s.to_string()).collect();
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         assert_eq!(parse_flag_str(&args, "--task"), Some("fix bug".to_string()));
         assert_eq!(parse_flag_str(&args, "--missing"), None);
+    }
+
+    // -- v0.53.0: --yes flag parsing ------------------------------------
+
+    #[test]
+    fn has_yes_flag_true() {
+        let args: Vec<String> = ["akar", "init", "--claude", "--yes"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert!(has_yes_flag(&args));
+    }
+
+    #[test]
+    fn has_yes_flag_false() {
+        let args: Vec<String> = ["akar", "init", "--claude"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert!(!has_yes_flag(&args));
     }
 }
