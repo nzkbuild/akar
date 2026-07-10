@@ -10,6 +10,7 @@ mod doctor;
 mod eval;
 mod event_log;
 mod foundation;
+mod hook_handler;
 mod hooks;
 mod init;
 mod learn;
@@ -75,8 +76,9 @@ fn main() {
         "init" => {
             let skip = args.iter().any(|a| a == "--skip");
             let claude = args.iter().any(|a| a == "--claude");
+            let hooks = args.iter().any(|a| a == "--hooks");
             let yes = has_yes_flag(&args);
-            cmd_init(skip, claude, yes);
+            cmd_init(skip, claude, hooks, yes);
         }
         "bootstrap" => cmd_bootstrap(),
         "verify" => cmd_verify(),
@@ -88,6 +90,19 @@ fn main() {
             let check = args.iter().any(|a| a == "--check");
             let install = args.iter().any(|a| a == "--install");
             cmd_hooks(check, install);
+        }
+        "hook" => {
+            let sub = args.get(2).map(|s| s.as_str());
+            match sub {
+                Some("user-prompt-submit") => {
+                    crate::hook_handler::run_user_prompt_submit_hook();
+                }
+                _ => {
+                    eprintln!("akar hook: unknown subcommand");
+                    eprintln!("Usage: akar hook user-prompt-submit");
+                    process::exit(1);
+                }
+            }
         }
         "safety" => {
             let command = args.get(2).map(|s| s.as_str());
@@ -207,8 +222,9 @@ fn print_usage() {
     println!("  init            First-run onboarding: bootstrap + doctor + next-steps guide");
     println!("  init --skip     Skip interactive check, force bootstrap + doctor");
     println!("  init --claude   Apply the AKAR session guidance snippet to CLAUDE.md");
+    println!("  init --hooks    Set up AKAR Claude Code hooks in .claude/settings.local.json");
     println!(
-        "  init --yes      Skip confirmation prompts (use with --claude for non-interactive setup)"
+        "  init --yes      Skip confirmation prompts (use with --claude/--hooks for non-interactive setup)"
     );
     println!("  prepare <task>  Consolidated pre-task: snapshot + request + check + governor");
     println!("  finish          Consolidated post-task: postmortem + learn + governor + status");
@@ -226,6 +242,9 @@ fn print_usage() {
     println!("  verify      Run task-specific verification and report honestly");
     println!("  eval [prompt]  Classify a prompt into a task contract (omit prompt for help)");
     println!("  hooks          Show hook script paths and installation instructions");
+    println!(
+        "  hook user-prompt-submit  Run the UserPromptSubmit hook handler (called by Claude Code)"
+    );
     println!("  safety <cmd>   Classify a shell command's risk level (Safe/Medium/High/Critical)");
     println!("  mission <prompt>  Run the full mission state machine for a prompt");
     println!("  skills            List registered skills and check for kernel conflicts");
@@ -246,8 +265,8 @@ fn print_usage() {
     println!("  --help      Print this help");
 }
 
-fn cmd_init(skip: bool, claude_integration: bool, yes: bool) {
-    let result = init::run_init(skip, claude_integration, yes);
+fn cmd_init(skip: bool, claude_integration: bool, hooks: bool, yes: bool) {
+    let result = init::run_init(skip, claude_integration, hooks, yes);
     print!("{}", init::format_init_report(&result));
 }
 
@@ -360,6 +379,21 @@ fn cmd_status() {
         path_health::PathHealthStatus::UnknownVersion => "found but version unknown".to_string(),
     };
     println!("  path akar:  {}", path_line);
+
+    // Claude Code auto-context hook check.
+    let hook_settings = cfg.project_root.join(".claude").join("settings.local.json");
+    let hook_line = if hook_settings.exists() {
+        match std::fs::read_to_string(&hook_settings) {
+            Ok(content) if content.contains("akar hook user-prompt-submit") => {
+                "auto-context hook configured"
+            }
+            Ok(_) => "hook config exists but no AKAR auto-context hook — run 'akar init --hooks'",
+            Err(_) => "hook config exists but could not be read",
+        }
+    } else {
+        "no hook config — run 'akar init --hooks' for auto-context"
+    };
+    println!("  hook:       {}", hook_line);
 
     // Surface doctor findings (failures first, then warnings). Only FAILs make
     // status DEGRADED; warnings are advisory and listed for visibility.

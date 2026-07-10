@@ -175,6 +175,7 @@ pub struct DoctorReport {
     pub verification_hints: Vec<Check>,
     pub claude_snippet: Vec<Check>,
     pub path_health: Vec<Check>,
+    pub claude_hooks: Vec<Check>,
     pub recommendations: Vec<String>,
 }
 
@@ -213,6 +214,7 @@ impl DoctorReport {
         v.extend(self.verification_hints.iter());
         v.extend(self.claude_snippet.iter());
         v.extend(self.path_health.iter());
+        v.extend(self.claude_hooks.iter());
         v
     }
 
@@ -244,6 +246,7 @@ pub fn run_doctor_report(cfg: &crate::config::Config) -> DoctorReport {
     let verification_hints = check_verification_hints(cfg);
     let claude_snippet = check_claude_snippet(cfg);
     let path_health = check_path_health_section();
+    let claude_hooks = check_claude_hooks_section(cfg);
 
     let mut report = DoctorReport {
         status: DoctorStatus::Ok,
@@ -256,6 +259,7 @@ pub fn run_doctor_report(cfg: &crate::config::Config) -> DoctorReport {
         verification_hints,
         claude_snippet,
         path_health,
+        claude_hooks,
         recommendations: Vec::new(),
     };
 
@@ -616,6 +620,45 @@ fn check_path_health_section() -> Vec<Check> {
     out
 }
 
+/// Check for Claude Code UserPromptSubmit hook config in .claude/settings.local.json.
+fn check_claude_hooks_section(cfg: &crate::config::Config) -> Vec<Check> {
+    let mut out = Vec::new();
+    let settings_path = cfg.project_root.join(".claude").join("settings.local.json");
+
+    if !settings_path.exists() {
+        out.push(Check::warn(
+            "UserPromptSubmit hook",
+            "no .claude/settings.local.json — run 'akar init --hooks' to set up auto-context",
+        ));
+        return out;
+    }
+
+    let content = match std::fs::read_to_string(&settings_path) {
+        Ok(s) => s,
+        Err(_) => {
+            out.push(Check::warn(
+                "UserPromptSubmit hook",
+                ".claude/settings.local.json exists but could not be read",
+            ));
+            return out;
+        }
+    };
+
+    if content.contains("akar hook user-prompt-submit") {
+        out.push(Check::pass(
+            "UserPromptSubmit hook",
+            "AKAR auto-context hook configured in .claude/settings.local.json",
+        ));
+    } else {
+        out.push(Check::warn(
+            "UserPromptSubmit hook",
+            ".claude/settings.local.json exists but no AKAR auto-context hook found — run 'akar init --hooks'",
+        ));
+    }
+
+    out
+}
+
 /// Telemetry checks: EVENT_LOG.jsonl and HOOK_EVENTS.jsonl parseability.
 fn check_telemetry(cfg: &crate::config::Config) -> Vec<Check> {
     let mut out = Vec::new();
@@ -904,6 +947,10 @@ pub fn format_doctor_report(report: &DoctorReport) -> String {
 
     out.push_str("path health:\n");
     out.push_str(&format_checks(&report.path_health));
+    out.push('\n');
+
+    out.push_str("claude code hooks:\n");
+    out.push_str(&format_checks(&report.claude_hooks));
     out.push('\n');
 
     out.push_str("recommendations:\n");
