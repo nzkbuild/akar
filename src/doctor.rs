@@ -656,7 +656,115 @@ fn check_claude_hooks_section(cfg: &crate::config::Config) -> Vec<Check> {
         ));
     }
 
+    // v0.56.1: validate that the hook handler actually produces correctly-formatted
+    // output. Previous versions output a double-nested hookSpecificOutput envelope
+    // that Claude Code could not parse — the hook was configured but silent.
+    if content.contains("akar hook user-prompt-submit") {
+        out.push(check_hook_handler_output_format(cfg));
+    }
+
     out
+}
+
+/// Run the hook handler with a synthetic input and validate the response format.
+///
+/// Does NOT mutate any files — passes a nonexistent cwd to prevent NEXT_RUN.md
+/// generation and DIFF_BASELINE.json writes. Only validates that stdout contains
+/// the correct Claude Code hook envelope.
+fn check_hook_handler_output_format(_cfg: &crate::config::Config) -> Check {
+    let label = "hook response format";
+    // Use a nonexistent directory as cwd so evaluate() returns NoRepo — no
+    // NEXT_RUN.md or DIFF_BASELINE.json is written to real project state.
+    let test_cwd = if cfg!(windows) {
+        r#"C:\\__akar_nonexistent_hook_test__"#
+    } else {
+        "/__akar_nonexistent_hook_test__"
+    };
+    let input = format!(
+        r#"{{"prompt":"akar hook diagnostic","cwd":"{}"}}"#,
+        test_cwd
+    );
+
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => {
+            return Check::warn(label, "cannot resolve akar binary path for hook diagnostic");
+        }
+    };
+
+    let output = std::process::Command::new(&exe)
+        .args(["hook", "user-prompt-submit"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+
+    let mut child = match output {
+        Ok(c) => c,
+        Err(e) => {
+            return Check::warn(label, &format!("cannot spawn akar hook handler: {}", e));
+        }
+    };
+
+    // Write stdin in a separate scope so it's dropped (closes stdin).
+    if let Some(ref mut stdin) = child.stdin {
+        use std::io::Write;
+        let _ = stdin.write_all(input.as_bytes());
+    }
+
+    let result = child.wait_with_output();
+    match result {
+        Ok(out) if out.status.success() => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let has_hook_specific = stdout.contains("\"hookSpecificOutput\"");
+            let has_hook_event_name = stdout.contains("\"hookEventName\"");
+            let has_additional_context = stdout.contains("\"additionalContext\"");
+            // Critical: must NOT have double-nested hookSpecificOutput (the v0.56.0 bug).
+            let is_double_nested =
+                stdout.contains("\"hookSpecificOutput\":{\"hookSpecificOutput\":");
+
+            if has_hook_specific
+                && has_hook_event_name
+                && has_additional_context
+                && !is_double_nested
+            {
+                Check::pass(label, "handler produces valid Claude Code hook response")
+            } else if is_double_nested {
+                Check::fail(
+                    label,
+                    "handler output has double-nested hookSpecificOutput — context will be invisible to Claude Code (v0.56.0 bug)",
+                )
+            } else {
+                let missing: Vec<&str> = [
+                    ("hookSpecificOutput", has_hook_specific),
+                    ("hookEventName", has_hook_event_name),
+                    ("additionalContext", has_additional_context),
+                ]
+                .iter()
+                .filter_map(|(name, present)| if !present { Some(*name) } else { None })
+                .collect();
+                Check::fail(
+                    label,
+                    &format!(
+                        "handler response missing required fields: {}",
+                        missing.join(", ")
+                    ),
+                )
+            }
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            Check::fail(
+                label,
+                &format!(
+                    "hook handler exited with code {}: {}",
+                    out.status.code().unwrap_or(-1),
+                    stderr.trim()
+                ),
+            )
+        }
+        Err(e) => Check::warn(label, &format!("cannot invoke hook handler: {}", e)),
+    }
 }
 
 /// Telemetry checks: EVENT_LOG.jsonl and HOOK_EVENTS.jsonl parseability.

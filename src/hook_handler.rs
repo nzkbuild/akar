@@ -128,6 +128,9 @@ pub fn run_user_prompt_submit_hook() {
 
     let cfg = config_for_cwd(&hook_input.cwd);
 
+    // Record the UserPromptSubmit event for observability.
+    let _ = record_user_prompt_submit_event(&cfg, &hook_input.prompt);
+
     let outcome = evaluate(&hook_input, &cfg);
     let context = match outcome {
         HookOutcome::Ready {
@@ -156,6 +159,35 @@ pub fn run_user_prompt_submit_hook() {
     };
 
     print_response(&context);
+}
+
+// ---------------------------------------------------------------------------
+// Event instrumentation (UserPromptSubmit observability)
+// ---------------------------------------------------------------------------
+
+/// Record a UserPromptSubmit event in `.akar/HOOK_EVENTS.jsonl`.
+///
+/// Records only: timestamp, hook_event_name, project_root, success category,
+/// and AKAR version. Does NOT record the full user prompt, secrets,
+/// capability bodies, or environment values.
+fn record_user_prompt_submit_event(cfg: &config::Config, _prompt: &str) -> std::io::Result<()> {
+    let akar_dir = &cfg.akar_dir;
+    let log_path = akar_dir.join("HOOK_EVENTS.jsonl");
+    let ts = event_log::now_iso8601();
+    let project_name = &cfg.project_name;
+    let version = env!("CARGO_PKG_VERSION");
+    // Deliberately does NOT record the full prompt.
+    let event = format!(
+        "{{\"timestamp\":\"{ts}\",\"hook_event_name\":\"UserPromptSubmit\",\"project_root\":\"{project_name}\",\"status\":\"fired\",\"akar_version\":\"v{version}\"}}\n"
+    );
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&log_path)?;
+    use std::io::Write;
+    file.write_all(event.as_bytes())?;
+    file.flush()?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -269,10 +301,9 @@ is unavailable. Proceed with caution."
 
 /// Print the Claude Code hook response to stdout.
 ///
-/// The response wraps additionalContext in the nested hookSpecificOutput
-/// envelope expected by Claude Code's UserPromptSubmit hook.
+/// Claude Code expects: `{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"..."}}`.
+/// The inner `hookEventName` is required to route the context correctly.
 fn print_response(additional_context: &str) {
-    // JSON-escape the context for embedding.
     let escaped = additional_context
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
@@ -280,7 +311,7 @@ fn print_response(additional_context: &str) {
         .replace('\r', "\\r")
         .replace('\t', "\\t");
     println!(
-        "{{\"hookSpecificOutput\":{{\"hookSpecificOutput\":{{\"additionalContext\":\"{}\"}}}}}}",
+        "{{\"hookSpecificOutput\":{{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"{}\"}}}}",
         escaped
     );
 }
@@ -295,7 +326,7 @@ fn print_stop_instruction(reason: &str) {
         .replace('"', "\\\"")
         .replace('\n', "\\n");
     println!(
-        "{{\"hookSpecificOutput\":{{\"hookSpecificOutput\":{{\"additionalContext\":\"{}\"}}}}}}",
+        "{{\"hookSpecificOutput\":{{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"{}\"}}}}",
         escaped
     );
 }
@@ -398,16 +429,14 @@ mod tests {
 
     #[test]
     fn response_has_correct_envelope_structure() {
-        // Capture stdout by running print_response and checking the output
-        // contains the expected keys.
         let ctx = "test context";
         let escaped = ctx.replace('\\', "\\\\").replace('"', "\\\"");
         let expected = format!(
-            "{{\"hookSpecificOutput\":{{\"hookSpecificOutput\":{{\"additionalContext\":\"{}\"}}}}}}",
+            "{{\"hookSpecificOutput\":{{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"{}\"}}}}",
             escaped
         );
-        // Verify the structure contains the nested envelope keys.
         assert!(expected.contains("\"hookSpecificOutput\""));
+        assert!(expected.contains("\"hookEventName\""));
         assert!(expected.contains("\"additionalContext\""));
         assert!(expected.contains("test context"));
     }
