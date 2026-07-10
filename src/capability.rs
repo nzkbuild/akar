@@ -334,8 +334,8 @@ fn discover_python_commands(project_root: &Path, caps: &mut Vec<Capability>) {
     });
 
     // Check for lint tools
-    let has_ruff = project_root.join("ruff.toml").exists()
-        || project_root.join(".ruff.toml").exists();
+    let has_ruff =
+        project_root.join("ruff.toml").exists() || project_root.join(".ruff.toml").exists();
     if has_ruff {
         caps.push(Capability {
             id: "repo:python:ruff".to_string(),
@@ -392,9 +392,9 @@ fn discover_justfile_commands(project_root: &Path, caps: &mut Vec<Capability>) {
 
 fn discover_generic_test_commands(project_root: &Path, caps: &mut Vec<Capability>) {
     // Only add generic test if we haven't already discovered one
-    let has_test = caps.iter().any(|c| {
-        c.id.contains(":test") || c.id.contains(":pytest") || c.id.contains(":unittest")
-    });
+    let has_test = caps
+        .iter()
+        .any(|c| c.id.contains(":test") || c.id.contains(":pytest") || c.id.contains(":unittest"));
     if has_test {
         return;
     }
@@ -468,7 +468,7 @@ fn discover_skills_dir(dir: &Path, scope: CapabilityScope, caps: &mut Vec<Capabi
             if target.is_dir() {
                 target.join("SKILL.md")
             } else {
-                continue
+                continue;
             }
         };
 
@@ -487,8 +487,8 @@ fn discover_skills_dir(dir: &Path, scope: CapabilityScope, caps: &mut Vec<Capabi
             Err(_) => continue,
         };
 
-        let display_name = extract_frontmatter_field(&content, "name")
-            .unwrap_or_else(|| name.to_string());
+        let display_name =
+            extract_frontmatter_field(&content, "name").unwrap_or_else(|| name.to_string());
         let description = extract_frontmatter_field(&content, "description")
             .unwrap_or_else(|| "User-installed skill".to_string());
 
@@ -525,7 +525,10 @@ fn discover_skills_dir(dir: &Path, scope: CapabilityScope, caps: &mut Vec<Capabi
 }
 
 fn discover_plugins(home: &Path, caps: &mut Vec<Capability>) {
-    let plugin_json = home.join(".claude").join("plugins").join("installed_plugins.json");
+    let plugin_json = home
+        .join(".claude")
+        .join("plugins")
+        .join("installed_plugins.json");
     let content = match std::fs::read_to_string(&plugin_json) {
         Ok(c) => c,
         Err(_) => return,
@@ -568,9 +571,7 @@ fn classify_plugin_type(name: &str) -> &'static str {
 
 fn discover_mcp_servers(project_root: &Path, home: &Path, caps: &mut Vec<Capability>) {
     // Check project-local settings first, then global
-    let local_settings = project_root
-        .join(".claude")
-        .join("settings.local.json");
+    let local_settings = project_root.join(".claude").join("settings.local.json");
     let global_settings = home.join(".claude").join("settings.json");
 
     discover_mcp_from_file(&local_settings, CapabilityScope::Project, caps);
@@ -613,9 +614,7 @@ fn scope_label_str(scope: CapabilityScope) -> &'static str {
 }
 
 fn discover_local_hooks(project_root: &Path, caps: &mut Vec<Capability>) {
-    let settings = project_root
-        .join(".claude")
-        .join("settings.local.json");
+    let settings = project_root.join(".claude").join("settings.local.json");
     if !settings.exists() {
         return;
     }
@@ -718,7 +717,8 @@ fn discover_akar_capabilities(project_root: &Path) -> Vec<Capability> {
             host: CapabilityHost::Akar,
             scope: CapabilityScope::AkarBuiltin,
             source_label: "AKAR runtime".to_string(),
-            description: "Classify shell command risk level (Safe/Medium/High/Critical)".to_string(),
+            description: "Classify shell command risk level (Safe/Medium/High/Critical)"
+                .to_string(),
             confidence: Confidence::High,
             risk: RiskLevel::Low,
             invocation_hint: None,
@@ -854,9 +854,9 @@ fn relevance_score(cap: &Capability, task_lower: &str, task_type: &TaskType) -> 
     // Task type → keyword affinity
     let keywords: &[&str] = match task_type {
         TaskType::Bugfix | TaskType::Repair => &["test", "lint", "build", "verify", "doctor"],
-        TaskType::Feature | TaskType::Greenfield => &[
-            "test", "build", "lint", "format", "verify", "dev", "start",
-        ],
+        TaskType::Feature | TaskType::Greenfield => {
+            &["test", "build", "lint", "format", "verify", "dev", "start"]
+        }
         TaskType::Refactor => &["test", "lint", "clippy", "format", "typecheck"],
         TaskType::Security => &["test", "audit", "lint", "safety", "verify"],
         TaskType::Frontend => &["test", "lint", "dev", "build", "format"],
@@ -915,7 +915,11 @@ fn is_stop_word(w: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Build a compact task operating profile.
-pub fn build_task_profile(task: &str, task_type: &TaskType, project_kind_label: &str) -> TaskProfile {
+pub fn build_task_profile(
+    task: &str,
+    task_type: &TaskType,
+    project_kind_label: &str,
+) -> TaskProfile {
     let phase_plan = build_phase_plan(task_type);
     let (stage1, stage2) = build_verification_plan(task_type, task);
 
@@ -936,8 +940,12 @@ pub fn build_task_profile(task: &str, task_type: &TaskType, project_kind_label: 
 fn build_leverage(task_type: &TaskType, project_kind_label: &str) -> Vec<String> {
     let mut items = vec![format!("Project kind: {}", project_kind_label)];
     match task_type {
-        TaskType::Bugfix => items.push("Targeted fix: identify root cause, minimal change".to_string()),
-        TaskType::Feature => items.push("Iterative build: test-driven, verify each step".to_string()),
+        TaskType::Bugfix => {
+            items.push("Targeted fix: identify root cause, minimal change".to_string())
+        }
+        TaskType::Feature => {
+            items.push("Iterative build: test-driven, verify each step".to_string())
+        }
         _ => {}
     }
     items
@@ -1054,13 +1062,28 @@ fn build_phase_plan(task_type: &TaskType) -> Vec<PhaseStep> {
 /// Build a two-stage verification plan.
 fn build_verification_plan(task_type: &TaskType, task: &str) -> (Option<String>, Vec<String>) {
     let stage1 = match task_type {
-        TaskType::Bugfix | TaskType::Repair => Some("Run the project test suite. Confirm the original symptom is resolved.".to_string()),
-        TaskType::Feature | TaskType::Greenfield => Some("Run tests and build. Confirm the new feature works end-to-end.".to_string()),
-        TaskType::Refactor => Some("Run full test suite and linter. Confirm no behavior changes.".to_string()),
-        TaskType::Security => Some("Run tests and security-focused checks. Confirm the vulnerability is closed.".to_string()),
-        TaskType::Migration => Some("Run tests. Verify migration applies and rolls back cleanly.".to_string()),
-        TaskType::Dependency => Some("Run build and tests. Confirm no breaking changes.".to_string()),
-        TaskType::Frontend => Some("Run lint, tests, and visual check. Confirm layout is correct.".to_string()),
+        TaskType::Bugfix | TaskType::Repair => Some(
+            "Run the project test suite. Confirm the original symptom is resolved.".to_string(),
+        ),
+        TaskType::Feature | TaskType::Greenfield => {
+            Some("Run tests and build. Confirm the new feature works end-to-end.".to_string())
+        }
+        TaskType::Refactor => {
+            Some("Run full test suite and linter. Confirm no behavior changes.".to_string())
+        }
+        TaskType::Security => Some(
+            "Run tests and security-focused checks. Confirm the vulnerability is closed."
+                .to_string(),
+        ),
+        TaskType::Migration => {
+            Some("Run tests. Verify migration applies and rolls back cleanly.".to_string())
+        }
+        TaskType::Dependency => {
+            Some("Run build and tests. Confirm no breaking changes.".to_string())
+        }
+        TaskType::Frontend => {
+            Some("Run lint, tests, and visual check. Confirm layout is correct.".to_string())
+        }
         _ => Some("Run the project build and tests. Confirm intended behavior.".to_string()),
     };
 
@@ -1428,18 +1451,12 @@ pub fn format_inventory_json(inventory: &CapabilityInventory) -> String {
             ""
         };
         lines.push("    {".to_string());
-        lines.push(format!(
-            "      \"id\": \"{}\",",
-            escape_json_str(&cap.id)
-        ));
+        lines.push(format!("      \"id\": \"{}\",", escape_json_str(&cap.id)));
         lines.push(format!(
             "      \"name\": \"{}\",",
             escape_json_str(&cap.name)
         ));
-        lines.push(format!(
-            "      \"category\": \"{}\",",
-            cap.category.label()
-        ));
+        lines.push(format!("      \"category\": \"{}\",", cap.category.label()));
         lines.push(format!(
             "      \"scope\": \"{}\",",
             scope_label_str(cap.scope)
@@ -1458,10 +1475,7 @@ pub fn format_inventory_json(inventory: &CapabilityInventory) -> String {
                 escape_json_str(hint)
             ));
         }
-        lines.push(format!(
-            "      \"risk\": \"{}\"",
-            risk_label(cap.risk)
-        ));
+        lines.push(format!("      \"risk\": \"{}\"", risk_label(cap.risk)));
         lines.push(format!("    }}{}", comma));
     }
     lines.push("  ],".to_string());
@@ -1487,7 +1501,9 @@ pub fn format_selection_text(selection: &CapabilitySelection) -> String {
     for cap in &selection.selected {
         out.push_str(&format!(
             "  + {} [{}] {}\n",
-            cap.name, cap.category.label(), cap.description
+            cap.name,
+            cap.category.label(),
+            cap.description
         ));
     }
     out
@@ -1527,11 +1543,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn temp_dir(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "akar_cap_{}_{}",
-            label,
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("akar_cap_{}_{}", label, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -1753,8 +1765,14 @@ mod tests {
         discover_mcp_from_file(&settings, CapabilityScope::Project, &mut caps);
         assert!(caps.iter().any(|c| c.id == "claude:mcp:filesystem"));
         // Command args should NOT appear in description or invocation_hint
-        let fs_cap = caps.iter().find(|c| c.id == "claude:mcp:filesystem").unwrap();
-        assert!(!fs_cap.description.contains("npx"), "MCP command must not leak");
+        let fs_cap = caps
+            .iter()
+            .find(|c| c.id == "claude:mcp:filesystem")
+            .unwrap();
+        assert!(
+            !fs_cap.description.contains("npx"),
+            "MCP command must not leak"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1785,8 +1803,7 @@ mod tests {
         assert!(db_cap.is_some());
         let cap = db_cap.unwrap();
         assert!(
-            !cap.description.contains("secret")
-                && !cap.description.contains("password"),
+            !cap.description.contains("secret") && !cap.description.contains("password"),
             "must not leak credential values"
         );
         std::fs::remove_dir_all(&dir).ok();
@@ -1822,7 +1839,11 @@ mod tests {
         std::fs::write(dir.join("Cargo.toml"), "[package]\nname=\"x\"").unwrap();
         let inventory = discover_all(&dir);
         // Should have no duplicates by id
-        let mut ids: Vec<String> = inventory.capabilities.iter().map(|c| c.id.clone()).collect();
+        let mut ids: Vec<String> = inventory
+            .capabilities
+            .iter()
+            .map(|c| c.id.clone())
+            .collect();
         let len_before = ids.len();
         ids.sort();
         ids.dedup();
@@ -1873,10 +1894,7 @@ mod tests {
         };
         let selection = select_capabilities(&inventory, "fix the compile bug", &TaskType::Bugfix);
         assert!(
-            selection
-                .selected
-                .iter()
-                .any(|c| c.id == "repo:cargo:test"),
+            selection.selected.iter().any(|c| c.id == "repo:cargo:test"),
             "test should be selected for bugfix"
         );
         // Cargo test should rank first (project-local + keyword match)
@@ -2073,23 +2091,27 @@ mod tests {
         assert!(profile.stage1_verify.is_some());
         assert!(!profile.stage2_audit.is_empty());
         // Bugfix should be atomic — short plan
-        assert_eq!(profile.phase_plan.len(), 3, "bugfix should be atomic (3 phases)");
+        assert_eq!(
+            profile.phase_plan.len(),
+            3,
+            "bugfix should be atomic (3 phases)"
+        );
     }
 
     #[test]
     fn build_task_profile_for_feature() {
         let profile = build_task_profile("add dark mode support", &TaskType::Feature, "Node");
-        assert!(profile.phase_plan.len() >= 4, "feature should have 4-5 phases");
+        assert!(
+            profile.phase_plan.len() >= 4,
+            "feature should have 4-5 phases"
+        );
         assert!(profile.stage1_verify.is_some());
     }
 
     #[test]
     fn security_task_gets_stronger_stage2() {
-        let profile = build_task_profile(
-            "fix the auth token validation",
-            &TaskType::Security,
-            "Rust",
-        );
+        let profile =
+            build_task_profile("fix the auth token validation", &TaskType::Security, "Rust");
         assert!(!profile.stage2_audit.is_empty());
         let audit = profile.stage2_audit.join(" ");
         assert!(
@@ -2106,11 +2128,7 @@ mod tests {
 
     #[test]
     fn migration_task_gets_rollback_check() {
-        let profile = build_task_profile(
-            "migrate user schema to v2",
-            &TaskType::Migration,
-            "Node",
-        );
+        let profile = build_task_profile("migrate user schema to v2", &TaskType::Migration, "Node");
         let audit = profile.stage2_audit.join(" ");
         assert!(
             audit.contains("rollback") || audit.contains("integrity"),
@@ -2121,11 +2139,8 @@ mod tests {
 
     #[test]
     fn trivial_task_gets_minimal_audit() {
-        let profile = build_task_profile(
-            "what does the config module do",
-            &TaskType::Answer,
-            "Rust",
-        );
+        let profile =
+            build_task_profile("what does the config module do", &TaskType::Answer, "Rust");
         let audit = profile.stage2_audit.join(" ");
         assert!(
             audit.contains("Low risk") || audit.contains("no broader audit"),
@@ -2153,20 +2168,18 @@ mod tests {
 
     #[test]
     fn render_capability_context_within_budget() {
-        let caps = vec![
-            Capability {
-                id: "repo:test".to_string(),
-                name: "test".to_string(),
-                category: CapabilityCategory::RepoCommand,
-                host: CapabilityHost::Repository,
-                scope: CapabilityScope::Project,
-                source_label: ".".to_string(),
-                description: "Run tests".to_string(),
-                confidence: Confidence::High,
-                risk: RiskLevel::Low,
-                invocation_hint: Some("npm test".to_string()),
-            }
-        ];
+        let caps = vec![Capability {
+            id: "repo:test".to_string(),
+            name: "test".to_string(),
+            category: CapabilityCategory::RepoCommand,
+            host: CapabilityHost::Repository,
+            scope: CapabilityScope::Project,
+            source_label: ".".to_string(),
+            description: "Run tests".to_string(),
+            confidence: Confidence::High,
+            risk: RiskLevel::Low,
+            invocation_hint: Some("npm test".to_string()),
+        }];
         let context = render_capability_context(&CapabilitySelection {
             selected: caps,
             total_discovered: 1,
@@ -2176,7 +2189,10 @@ mod tests {
             selection_time_ms: 0,
         });
         assert!(context.contains("npm test"));
-        assert!(!context.contains("[REDACTED]"), "redaction marker only in MCP");
+        assert!(
+            !context.contains("[REDACTED]"),
+            "redaction marker only in MCP"
+        );
     }
 
     #[test]
@@ -2194,20 +2210,18 @@ mod tests {
 
     #[test]
     fn build_enhanced_context_contains_all_parts() {
-        let caps = vec![
-            Capability {
-                id: "repo:test".to_string(),
-                name: "npm test".to_string(),
-                category: CapabilityCategory::RepoCommand,
-                host: CapabilityHost::Repository,
-                scope: CapabilityScope::Project,
-                source_label: ".".to_string(),
-                description: "Run tests".to_string(),
-                confidence: Confidence::High,
-                risk: RiskLevel::Low,
-                invocation_hint: Some("npm test".to_string()),
-            }
-        ];
+        let caps = vec![Capability {
+            id: "repo:test".to_string(),
+            name: "npm test".to_string(),
+            category: CapabilityCategory::RepoCommand,
+            host: CapabilityHost::Repository,
+            scope: CapabilityScope::Project,
+            source_label: ".".to_string(),
+            description: "Run tests".to_string(),
+            confidence: Confidence::High,
+            risk: RiskLevel::Low,
+            invocation_hint: Some("npm test".to_string()),
+        }];
         let selection = CapabilitySelection {
             selected: caps,
             total_discovered: 1,
@@ -2217,14 +2231,7 @@ mod tests {
             selection_time_ms: 0,
         };
         let profile = build_task_profile("fix bug", &TaskType::Bugfix, "Node");
-        let ctx = build_enhanced_context(
-            "fix bug",
-            "Bugfix",
-            3,
-            60,
-            &selection,
-            &profile,
-        );
+        let ctx = build_enhanced_context("fix bug", "Bugfix", 3, 60, &selection, &profile);
         assert!(ctx.contains("[AKAR auto-context]"));
         assert!(ctx.contains("fix bug"));
         assert!(ctx.contains("Bugfix"));
@@ -2264,7 +2271,10 @@ mod tests {
         let ctx = build_enhanced_context("test", "Bugfix", 1, 10, &selection, &profile);
         // Context should be reasonable — not raw megabytes
         assert!(ctx.len() < 10000, "context must be bounded");
-        assert!(ctx.contains("...") || ctx.len() <= 3000, "context should truncate if oversized");
+        assert!(
+            ctx.contains("...") || ctx.len() <= 3000,
+            "context should truncate if oversized"
+        );
     }
 
     // -- JSON helpers ----------------------------------------------------------

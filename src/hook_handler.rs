@@ -142,7 +142,14 @@ pub fn run_user_prompt_submit_hook() {
             let selection = capability::select_capabilities(&inventory, &task, &tc.task_type);
             let kind_label = project_detection::detect_project_kind(&cfg.project_root).label();
             let profile = capability::build_task_profile(&task, &tc.task_type, kind_label);
-            context_for_ready(&task, &task_type, budget_files, budget_loc, &selection, &profile)
+            context_for_ready(
+                &task,
+                &task_type,
+                budget_files,
+                budget_loc,
+                &selection,
+                &profile,
+            )
         }
         HookOutcome::DirtyTree => context_for_dirty_tree(&cfg),
         HookOutcome::NoRepo => context_for_no_repo(),
@@ -224,7 +231,14 @@ fn context_for_ready(
     selection: &capability::CapabilitySelection,
     profile: &capability::TaskProfile,
 ) -> String {
-    capability::build_enhanced_context(task, task_type, budget_files, budget_loc, selection, profile)
+    capability::build_enhanced_context(
+        task,
+        task_type,
+        budget_files,
+        budget_loc,
+        selection,
+        profile,
+    )
 }
 
 fn context_for_dirty_tree(cfg: &config::Config) -> String {
@@ -293,8 +307,8 @@ fn print_stop_instruction(reason: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract;
     use crate::capability;
+    use crate::contract;
 
     // -- JSON extraction --------------------------------------------------
 
@@ -441,7 +455,8 @@ mod tests {
             estimated_tokens: 0,
             selection_time_ms: 0,
         };
-        let profile = capability::build_task_profile("fix the bug", &contract::TaskType::Bugfix, "Rust");
+        let profile =
+            capability::build_task_profile("fix the bug", &contract::TaskType::Bugfix, "Rust");
         let ctx = context_for_ready("fix the bug", "Bugfix", 3, 60, &selection, &profile);
         assert!(
             ctx.contains("fix the bug"),
