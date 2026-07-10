@@ -14,11 +14,13 @@
 use std::io::Read;
 use std::path::PathBuf;
 
+use crate::capability;
 use crate::config;
 use crate::contract;
 use crate::diff_budget;
 use crate::event_log;
 use crate::loop_governor;
+use crate::project_detection;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -135,7 +137,12 @@ pub fn run_user_prompt_submit_hook() {
             budget_loc,
         } => {
             generate_next_run(&cfg, &task);
-            context_for_ready(&task, &task_type, budget_files, budget_loc)
+            let tc = contract::classify_prompt(&task);
+            let inventory = capability::discover_all(&cfg.project_root);
+            let selection = capability::select_capabilities(&inventory, &task, &tc.task_type);
+            let kind_label = project_detection::detect_project_kind(&cfg.project_root).label();
+            let profile = capability::build_task_profile(&task, &tc.task_type, kind_label);
+            context_for_ready(&task, &task_type, budget_files, budget_loc, &selection, &profile)
         }
         HookOutcome::DirtyTree => context_for_dirty_tree(&cfg),
         HookOutcome::NoRepo => context_for_no_repo(),
@@ -214,21 +221,10 @@ fn context_for_ready(
     task_type: &str,
     budget_files: usize,
     budget_loc: usize,
+    selection: &capability::CapabilitySelection,
+    profile: &capability::TaskProfile,
 ) -> String {
-    format!(
-        "\
-[AKAR auto-context]
-Task: {task}
-Type: {task_type}
-Budget: {budget_files} files, {budget_loc} LOC
-
-Before starting, read `.akar/NEXT_RUN.md` for the full task contract:
-scope, allowed/forbidden commands, required verification, stop conditions,
-and governor decision.
-
-After completing work, verify you stayed within the budget and stop conditions.
-The user will run `akar finish`."
-    )
+    capability::build_enhanced_context(task, task_type, budget_files, budget_loc, selection, profile)
 }
 
 fn context_for_dirty_tree(cfg: &config::Config) -> String {
@@ -297,6 +293,8 @@ fn print_stop_instruction(reason: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract;
+    use crate::capability;
 
     // -- JSON extraction --------------------------------------------------
 
@@ -435,7 +433,16 @@ mod tests {
 
     #[test]
     fn ready_context_includes_task_and_budget() {
-        let ctx = context_for_ready("fix the bug", "Bugfix", 3, 60);
+        let selection = capability::CapabilitySelection {
+            selected: vec![],
+            total_discovered: 0,
+            omitted_count: 0,
+            context_chars: 0,
+            estimated_tokens: 0,
+            selection_time_ms: 0,
+        };
+        let profile = capability::build_task_profile("fix the bug", &contract::TaskType::Bugfix, "Rust");
+        let ctx = context_for_ready("fix the bug", "Bugfix", 3, 60, &selection, &profile);
         assert!(
             ctx.contains("fix the bug"),
             "must include task: got '{}'",

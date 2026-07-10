@@ -1,5 +1,6 @@
 mod backup;
 mod bootstrap;
+mod capability;
 mod claude_snippet;
 mod config;
 mod context_pack;
@@ -52,6 +53,7 @@ fn main() {
             print_usage();
         }
         "status" => cmd_status(),
+        "capabilities" => cmd_capabilities(&args),
         "governor" => {
             let one_line = args.iter().any(|a| a == "--one-line");
             let json_mode = args.iter().any(|a| a == "--json");
@@ -229,6 +231,8 @@ fn print_usage() {
     println!("  prepare <task>  Consolidated pre-task: snapshot + request + check + governor");
     println!("  finish          Consolidated post-task: postmortem + learn + governor + status");
     println!("  status      Show runtime health and current session state");
+    println!("  capabilities    Discover and list available host capabilities");
+    println!("  capabilities --json  Output capabilities as JSON");
     println!("  governor   Print the loop governor decision (next safe action)");
     println!("  governor --one-line  Print DECISION<TAB>SUGGESTED_PROMPT on one line");
     println!("  governor --json      Print the loop governor decision as JSON");
@@ -394,6 +398,10 @@ fn cmd_status() {
         "no hook config — run 'akar init --hooks' for auto-context"
     };
     println!("  hook:       {}", hook_line);
+
+    // Host capability awareness.
+    let inventory = capability::discover_all(&cfg.project_root);
+    println!("  caps:       {} discovered", inventory.discovered_count);
 
     // Surface doctor findings (failures first, then warnings). Only FAILs make
     // status DEGRADED; warnings are advisory and listed for visibility.
@@ -1319,6 +1327,25 @@ fn cmd_prepare(task: Option<String>, used: Option<u64>, limit: Option<u64>) {
 ///
 /// Does NOT run project tests, edit project source, commit, push, reset, clean,
 /// stash, checkout, install dependencies, or modify Claude settings.
+
+/// `akar capabilities` — discover and list available host capabilities.
+///
+/// Read-only. Does NOT execute discovered commands, invoke MCP servers, or load
+/// plugins. Produces only metadata: names, categories, descriptions. All
+/// credentials and secrets are redacted from the output.
+fn cmd_capabilities(args: &[String]) {
+    let cfg = config::Config::discover();
+    let json_mode = args.iter().any(|a| a == "--json");
+
+    let inventory = capability::discover_all(&cfg.project_root);
+
+    if json_mode {
+        println!("{}", capability::format_inventory_json(&inventory));
+    } else {
+        println!("{}", capability::format_inventory_text(&inventory));
+    }
+}
+
 fn cmd_finish() {
     let cfg = config::Config::discover();
 
