@@ -35,7 +35,7 @@ Three v0.54 regressions found and fixed during dogfood:
 - Missing `.akar/` directory creation → `create_dir_all` before writes
 - Governor ran after baseline dirtying → run `decide()` before `write_baseline()`
 
-## Dogfood Verdict: 4/4 Automated PASS, 1 Pending
+## Dogfood Verdict: 5/5 PASS
 
 | Fixture | Type | Verdict |
 |---|---|---|
@@ -43,13 +43,14 @@ Three v0.54 regressions found and fixed during dogfood:
 | Fixture 2: Existing config + user hook preservation | Automated CLI | PASS |
 | Fixture 3: Clean tree hook simulation | Automated CLI | PASS |
 | Fixture 4: Dirty tree hook simulation | Automated CLI | PASS |
-| Trial: Fresh Claude Code auto-context | Fresh Claude Code session | PENDING |
+| Trial: Fresh Claude Code auto-context | Fresh Claude Code session | PASS |
 
 Hook setup creates valid JSON, preserves user hooks, idempotent. Clean tree
 generates NEXT_RUN.md with correct governor decision (SNAPSHOT_NOW). Dirty tree
-injects STOP, creates no files. Fresh Claude Code trial is instrumented and
-ready but cannot be executed from within a Claude Code session (same meta-testing
-limitation as v0.49/v0.50).
+injects STOP, creates no files. Fresh Claude Code trial passed — the
+UserPromptSubmit hook fired, AKAR auto-prepared context, Claude fixed the bug
+without the user mentioning AKAR or running `akar prepare`. The v0.54 auto-context
+hook removes the manual prepare step for this tested Claude Code flow.
 
 ## Zero-Relay Delivery Chain (v0.48 → v0.54)
 
@@ -79,9 +80,10 @@ The only remaining manual step is `akar finish` at session end.
 1. `doctor::ok_when_everything_present_and_valid` fails — HOOK_EVENTS.jsonl line 972 malformation (pre-existing)
 2. `doctor_check` eval fails — same root cause (pre-existing)
 3. 2 dead-code warnings: `ProjectDetection` struct and `detect_project` never constructed/used (pre-existing)
-4. Fresh Claude Code auto-context trial PENDING — fixture is instrumented, requires external session
-5. settings.local.json merge produces working but not pretty-printed JSON (functional, backed up)
-6. 26 unrelated src files have fmt whitespace drift (not staged)
+4. settings.local.json merge produces working but not pretty-printed JSON (functional, backed up)
+5. Live multi-host support not implemented
+6. MCP/skill/plugin routing not implemented
+7. Token/request reduction not benchmarked yet
 
 ## Code Map
 
@@ -123,7 +125,9 @@ The only remaining manual step is `akar finish` at session end.
 
 ## Next Recommended Release
 
-**v0.55.0: External Fresh Claude Code Trial Results** — run the fresh Claude Code
-trial against the instrumented fixture, record results. If the trial passes, this
-is a pure audit release (no code changes beyond this dogfood's regression fixes).
-If the trial fails, v0.55 may need hook format adjustments.
+**v0.55.0: Multi-Session Loop Foundation** — with hooks proven end-to-end, the next
+release should focus on the post-session side: `akar finish` automation, session
+postmortem workflow, or the full multi-session lifecycle. Alternatively, a `akar
+finish` hook variant (PreToolUse monitoring) would close the last manual step.
+Token/request reduction benchmarking should also be completed to measure the
+actual savings from auto-context injection.
