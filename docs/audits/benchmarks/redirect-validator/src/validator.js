@@ -1,10 +1,19 @@
-// HTTP redirect validator — deliberately has known defects.
+// HTTP redirect validator — deliberately contains known defects.
 //
-// DEFECT 1 (functional): allows open redirect to any host when isAllowedHost
-// receives an empty string (edge case in `safeRedirect`).
+// FIX TARGET: This file is the baseline for a redirect-validation benchmark.
 //
-// DEFECT 2 (security): `redirectUrl` does not sanitize CRLF, enabling header
-// injection when the URL is reflected in a `Location` header (Stage 2 concern).
+// Defect A (functional): `isAllowedHost` uses `.every()` instead of `.some()`,
+//   so a host must end with ALL allow-list entries to pass. "example.com"
+//   is rejected because it does not end with "sub.example.com". Stage 1
+//   tests assert the CORRECT behavior and will FAIL until this is fixed.
+//
+// Defect B (security): `isAllowedHost` has no guard for an empty allow-list.
+//   `[].every()` and `[].some()` are both vacuously true, so any host passes
+//   when the allow-list is empty. Stage 2 tests assert the CORRECT behavior.
+//
+// Defect C (security): `locationHeader` does not strip CRLF characters,
+//   enabling HTTP header injection. Stage 2 tests assert the CORRECT
+//   behavior (CRLF stripped).
 
 /**
  * Validate a redirect URL against an allow-list of trusted hosts.

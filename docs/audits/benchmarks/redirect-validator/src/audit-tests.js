@@ -1,7 +1,9 @@
-// Stage 2 — audit / security tests: catches what Stage 1 misses.
-const { safeRedirect, isAllowedHost, redirectUrl, locationHeader } = require("./validator");
-
-const hosts = ["example.com", "sub.example.com"];
+// Stage 2 — security / audit tests: validates security properties.
+// MUST FAIL on the known-defect baseline:
+//   - CRLF injection in locationHeader
+//   - empty allow-list passes everything (open redirect)
+// After fix, these all pass.
+const { isAllowedHost, locationHeader } = require("./validator");
 
 let passed = 0;
 let failed = 0;
@@ -11,33 +13,30 @@ function check(cond, label) {
   else { failed++; console.error("FAIL:", label); }
 }
 
-// --- Logic defect: .every instead of .some ---
-// isAllowedHost uses `every` instead of `some`, so a host must end with ALL
-// entries to pass. Stage 1 tests this factually, but doesn't flag it as a bug.
-// Here we assert the CORRECT behavior:
-check(
-  !isAllowedHost("example.com", hosts),
-  "logic defect: 'example.com' rejected because it does not end with 'sub.example.com' (KNOWN: .every instead of .some)"
-);
-
-// --- Open redirect: empty allow-list ---
-// isAllowedHost("anything", []) returns true because [].every(fn) is vacuously true.
-// This is reachable if dynamic config provides an empty allow-list.
-check(
-  isAllowedHost("any-host", []),
-  "open redirect: empty allow-list passes everything (KNOWN DEFECT)"
-);
-
-// --- CRLF injection in locationHeader ---
+// --- CRLF injection ---
+// locationHeader must sanitize CRLF to prevent header injection.
 const injected = locationHeader("https://a.com\r\nSet-Cookie: session=stolen");
 check(
-  injected.includes("\r\n"),
-  "CRLF injection: locationHeader returns raw CRLF (KNOWN DEFECT)"
+  !injected.includes("\r") && !injected.includes("\n"),
+  "CRLF stripped from locationHeader"
 );
 
-// --- Baseline behaviors ---
-check(safeRedirect("https://sub.example.com/page", hosts),    "baseline: sub.example.com accepted");
-check(!safeRedirect("https://evil.com", hosts),               "baseline: blocked host rejected");
+const injected2 = locationHeader("https://a.com\nX-Injected: true");
+check(
+  !injected2.includes("\r") && !injected2.includes("\n"),
+  "LF stripped from locationHeader"
+);
+
+// --- Empty allow-list guard ---
+// An empty allow-list must not accept any host.
+check(
+  !isAllowedHost("any-host", []),
+  "empty allow-list rejects all hosts"
+);
+check(
+  !isAllowedHost("", []),
+  "empty allow-list rejects empty host"
+);
 
 console.log(`Stage 2 (audit): ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
