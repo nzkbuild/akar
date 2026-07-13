@@ -23,7 +23,7 @@ Claude Code does the work. AKAR keeps the loop safe, scoped, evidenced, and reco
 
 AKAR does not call model APIs, write source code, or push. With explicit `akar init --claude --hooks` setup, it can update project-local `CLAUDE.md` and `.claude/settings.local.json`; backups precede settings changes. Runtime state remains local.
 
-**[docs/architecture/AKAR_NORTH_STAR_2026.md](docs/architecture/AKAR_NORTH_STAR_2026.md)** — current project direction.  
+**[docs/architecture/AKAR_NORTH_STAR_2026.md](docs/architecture/AKAR_NORTH_STAR_2026.md)** — current project direction.
 **[docs/ALPHA_USAGE.md](docs/ALPHA_USAGE.md)** — supported capabilities, limitations, and workflow.
 
 ---
