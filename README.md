@@ -16,13 +16,15 @@ AKAR is **stable advisory alpha** for the CLI advisory loop. It is not autonomou
 
 Claude Code does the work. AKAR keeps the loop safe, scoped, evidenced, and recoverable:
 - Preflight snapshots establish a diff budget before you start.
-- NEXT_RUN.md compiles a project-aware guardrail prompt you hand to Claude manually.
+- `UserPromptSubmit` can inject bounded, project-aware task context automatically.
+- NEXT_RUN.md retains the full local task contract for details and recovery.
 - Postmortem diff measurement tells you whether you stayed within budget.
 - The governor reads local evidence and suggests the next safe action — it never executes anything.
 
-AKAR does not call model APIs, does not write source code, does not push, and does not modify Claude Code settings. It lives entirely in `.akar/` and `~/.claude/akar/`.
+AKAR does not call model APIs, write source code, or push. With explicit `akar init --claude --hooks` setup, it can update project-local `CLAUDE.md` and `.claude/settings.local.json`; backups precede settings changes. Runtime state remains local.
 
-**[docs/ALPHA_USAGE.md](docs/ALPHA_USAGE.md)** — full definition: supported capabilities, known limitations, the supported workflow, guarantees, and version roadmap.
+**[docs/architecture/AKAR_NORTH_STAR_2026.md](docs/architecture/AKAR_NORTH_STAR_2026.md)** — current project direction.  
+**[docs/ALPHA_USAGE.md](docs/ALPHA_USAGE.md)** — supported capabilities, limitations, and workflow.
 
 ---
 
