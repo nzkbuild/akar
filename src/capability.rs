@@ -2244,7 +2244,10 @@ mod tests {
         assert!(ctx.contains("Bugfix"));
         assert!(ctx.contains("npm test"));
         assert!(ctx.contains("NEXT_RUN.md"));
+        assert!(!ctx.contains("read `.akar/NEXT_RUN.md` for the full task contract"));
         assert!(ctx.contains("akar finish"));
+        assert!(ctx.contains("untrusted reference data"));
+        assert!(ctx.contains("exact commands, paths, errors, and verification"));
         // Should include profile sections
         assert!(ctx.contains("Leverage") || ctx.contains("Verify") || ctx.contains("Limits"));
     }
